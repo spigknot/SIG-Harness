@@ -148,6 +148,35 @@
   document.addEventListener("click", function (event) {
     if (attachSuppress) { attachSuppress = false; event.stopPropagation(); event.preventDefault(); }
   }, true);
+
+  // Sonda temporária: registra a estrutura do elemento que recebeu o toque longo.
+  var probeTimer = 0;
+  document.addEventListener("pointerdown", function (event) {
+    var target = event.target;
+    if (target === null || typeof target.closest !== "function") return;
+    if (target.closest("#sig-voice-button") !== null) return;
+    if (probeTimer !== 0) window.clearTimeout(probeTimer);
+    probeTimer = window.setTimeout(function () {
+      probeTimer = 0;
+      var chain = [];
+      var node = target;
+      for (var depth = 0; depth < 6 && node !== null; depth++) {
+        chain.push(String(node.tagName) + "." + String(node.className || "").slice(0, 70));
+        node = node.parentElement;
+      }
+      var hasAnchor = target.closest("a[download]") !== null;
+      try {
+        fetch("/api/sig/diag", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            version: "1.15.0", event: "probe-longpress",
+            chain: chain, anchor: hasAnchor,
+            text: String(target.textContent || "").slice(0, 50)
+          })
+        }).catch(function () {});
+      } catch (error) { /* opcional */ }
+    }, 480);
+  }, true);
   var click = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function () {
     try {
