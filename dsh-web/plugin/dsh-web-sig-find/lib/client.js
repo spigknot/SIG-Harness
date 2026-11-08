@@ -147,18 +147,21 @@ window.__ModuleLoader__.load({
       return null;
     }
 
+    /** Folga extra abaixo da faixa (ajuste fino de posição). */
+    var DROP = 20;
+
     /** Ponto padrão: logo abaixo da faixa que ocupa a linha seguinte às abas. */
     function defaultTop(tabs) {
       var rect = tabs.getBoundingClientRect();
-      var base = rect.bottom + 6;
-      var y = base + 6;
+      var edge = rect.bottom + 6;
+      var y = edge + 6;
       var bottom = rowBottomAt(Math.round(window.innerWidth * 0.5), y);
       if (bottom === null) bottom = rowBottomAt(Math.round(window.innerWidth - 30), y);
       if (bottom !== null) {
-        var target = bottom + 8;
-        if (target > base && target <= base + 160) return target;
+        var target = bottom + 8 + DROP;
+        if (target > edge && target <= edge + 160) return target;
       }
-      return base;
+      return edge + DROP;
     }
 
     function applyFrame(top, left, width) {
