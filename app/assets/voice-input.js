@@ -38,15 +38,6 @@
       'color:var(--dsw-alias-label-primary,#f2f2f2);font:12.5px/1.35 -apple-system,Roboto,sans-serif;' +
       'box-shadow:0 6px 20px rgba(0,0,0,.35);display:none;pointer-events:none;white-space:nowrap;' +
       'overflow:hidden;text-overflow:ellipsis}';
-      '#sig-voice-menu{position:fixed;z-index:2147483000;min-width:214px;padding:6px;border-radius:12px;' +
-      'background:var(--dsw-alias-bg-overlay,rgba(30,30,32,.98));border:1px solid rgba(255,255,255,.12);' +
-      'box-shadow:0 10px 30px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:2px}' +
-      '#sig-voice-menu button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;' +
-      'border-radius:8px;padding:9px 10px;background:transparent;color:var(--dsw-alias-label-primary,#f2f2f2);' +
-      'font:13px/1.25 -apple-system,Roboto,sans-serif;cursor:pointer}' +
-      '#sig-voice-menu button:hover{background:rgba(255,255,255,.08)}' +
-      "#sig-voice-menu button[data-active='1']{font-weight:600}" +
-      '#sig-voice-menu .sig-check{margin-left:auto;color:var(--dsw-alias-button-primary-fill,#4d6bfe);font-size:12px}';
     document.head.appendChild(style);
   }
 
@@ -65,17 +56,26 @@
     var active = currentProvider();
     var card = document.createElement('div');
     card.id = 'sig-voice-menu';
+    // Estilo embutido: independe de folha de estilo e da ordem de carregamento.
+    card.style.cssText = 'position:fixed;z-index:2147483000;min-width:214px;padding:6px;'
+      + 'border-radius:12px;background:#26282d;border:1px solid rgba(255,255,255,.14);'
+      + 'box-shadow:0 10px 30px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:2px';
     card.setAttribute('role', 'menu');
     for (var i = 0; i < PROVIDERS.length; i++) {
       (function (provider) {
         var item = document.createElement('button');
         item.type = 'button';
         item.setAttribute('role', 'menuitem');
+        item.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;text-align:left;'
+          + 'border:0;border-radius:8px;padding:9px 10px;background:transparent;'
+          + 'color:#f2f2f2;font:13px/1.25 -apple-system,Roboto,sans-serif;cursor:pointer'
+          + (provider.id === active ? ';font-weight:600' : '');
         item.dataset.active = provider.id === active ? '1' : '0';
         item.textContent = provider.label;
         if (provider.id === active) {
           var check = document.createElement('span');
           check.className = 'sig-check';
+          check.style.cssText = 'margin-left:auto;color:#4d6bfe;font-size:12px';
           check.textContent = '\u2713';
           item.appendChild(check);
         }
@@ -94,6 +94,17 @@
     var left = Math.min(box.left, window.innerWidth - card.offsetWidth - 8);
     card.style.left = Math.max(8, left) + 'px';
     card.style.top = Math.max(8, box.top - card.offsetHeight - 8) + 'px';
+    try {
+      fetch('/api/sig/diag', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          version: '1.13.0', event: 'voice-menu-open',
+          rect: [Math.round(card.getBoundingClientRect().left), Math.round(card.getBoundingClientRect().top),
+                 card.offsetWidth, card.offsetHeight],
+          items: card.childNodes.length, display: getComputedStyle(card).display
+        })
+      }).catch(function () {});
+    } catch (error) { /* opcional */ }
   }
 
   /**
