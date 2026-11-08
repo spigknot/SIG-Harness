@@ -50,9 +50,28 @@ window.__ModuleLoader__.load({
         ]
       });
     }
+    /**
+     * Ajustes do rodapé da barra lateral:
+     * - a engrenagem da direita vem do dsh-web-mobile (data-mobile-nav=quick-settings) e ficou
+     *   presa à linha de conta, que desativamos — sem ação, só ocupa espaço;
+     * - o rótulo "Settings" sai e o item fica só com o ícone.
+     */
+    function installFooterStyle() {
+      if (document.getElementById("sig-footer-style") !== null) return;
+      var style = document.createElement("style");
+      style.id = "sig-footer-style";
+      style.textContent = [
+        '[data-mobile-nav="quick-settings"], [data-mobile-nav="quick-settings-wrap"]{display:none !important}',
+        '[class*="triggerRow"] [class*="triggerLabel"]{display:none !important}',
+        '[class*="triggerRow"] [class*="trigger"]{gap:0 !important}'
+      ].join("\n");
+      document.head.appendChild(style);
+    }
+
     const inject = ["slots"];
 
     function apply(ctx) {
+      installFooterStyle();
       ctx.slots.inject("sidebar.footer.action", function () {
         return ctx.slots.register({
           name: "sidebar.footer.action",
