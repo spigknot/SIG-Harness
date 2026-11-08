@@ -56,3 +56,7 @@ Só depois: `git add -A`, commit e push. Nunca `--force`, nunca `--no-verify`.
 - Busca por conteúdo: **só no Enter**; tecla a tecla filtra por título.
 - Raciocínio: **Off detectado pelo formato do provedor**; padrão no maior nível do modelo.
 - Widget de busca dentro da sessão: **DOM puro**, nunca em slot do cabeçalho (já quebrou a barra).
+- Composer no celular: **Enter quebra linha**, envio **só** pelo botão. O editor é Lexical
+  (`[data-composer-input]`); a quebra entra por `beforeinput insertLineBreak`.
+- Rodapé da barra lateral: **⚙ à esquerda (área de toque restrita ao ícone)** e **⟳ vermelho à
+  direita**, este último sempre com confirmação Sim/Não na tela.
