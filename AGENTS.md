@@ -49,6 +49,10 @@ bash build.sh                                # gera dist/SIG-Harness.apk
 
 Só depois: `git add -A`, commit e push. Nunca `--force`, nunca `--no-verify`.
 
+**Publicar versão** é mais que commitar: o `dist/` é ignorado pelo Git, então o APK só
+chega ao usuário pela **Release** do GitHub. O passo a passo está em `UPDATE.md` —
+versão publicada sem release com APK anexado não conta como entregue.
+
 ## Já está decidido (não reabrir sem motivo)
 
 - Provedor DeepSeek do login e superfície de conta: **desligados**; o manual (`deepseek-official`,
