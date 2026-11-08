@@ -69,7 +69,8 @@ com o histórico atual (7 sessões, 5,8M caracteres): **0,8 s** de construção,
 de RSS, **7,8 MB** de índice.
 
 A caixa dentro da sessão é `plugin/dsh-web-sig-find`, escrita em **DOM puro**: ela se posiciona
-como sobreposição abaixo da linha das abas e não participa da árvore React. Uma versão anterior
+como sobreposição abaixo da linha das abas e não participa da árvore React. No estado recolhido ela é só uma **lupa** no canto direito da linha das abas; o clique abre a
+caixa, e o **×** (ou Esc) volta para a lupa. Uma versão anterior
 registrava um slot `conversation.session.header.views.trailing` dentro do cabeçalho e foi
 revertida — o widget fora do React não pode derrubar o cabeçalho da conversa.
 

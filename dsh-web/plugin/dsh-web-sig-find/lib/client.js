@@ -6,14 +6,18 @@ window.__ModuleLoader__.load({
 
     var MARK = "data-sig-find";
     var UI_ATTR = "data-sig-find-ui";
-    var EVENT = "sig-find-run";
     var hits = [];
     var current = -1;
     var input = null;
     var counter = null;
     var box = null;
-    var toggle = null;
+    var launcher = null;
     var expanded = false;
+
+    function panelCss() {
+      return "position:fixed;align-items:center;gap:6px;z-index:2147483000;padding:4px 8px;"
+        + "border-radius:8px;background:#1b1c1f;border:1px solid #2c2e33;box-shadow:0 2px 10px rgba(0,0,0,.45)";
+    }
 
     function scope() {
       var tabs = document.querySelector("[data-conversation-tabs]");
@@ -52,7 +56,6 @@ window.__ModuleLoader__.load({
       if (node.hasAttribute(UI_ATTR)) return;
       var cls = typeof node.className === "string" ? node.className : "";
       if (cls.indexOf("_header") !== -1) return;
-      if (node.id === "sig-find-root") return;
       var children = node.childNodes;
       for (var i = 0; i < children.length; i += 1) collect(children[i], out);
     }
@@ -115,44 +118,90 @@ window.__ModuleLoader__.load({
       show(jump === "last" ? hits.length - 1 : 0);
     }
 
+    /** Both the launcher and the panel sit at the right end of the View tabs line. */
     function place() {
-      if (box === null) return;
       var tabs = document.querySelector("[data-conversation-tabs]");
-      if (tabs === null) { box.style.display = "none"; return; }
+      if (tabs === null) {
+        if (box !== null) box.style.display = "none";
+        if (launcher !== null) launcher.style.display = "none";
+        return;
+      }
       var rect = tabs.getBoundingClientRect();
-      if (rect.width === 0) { box.style.display = "none"; return; }
-      box.style.display = "flex";
-      box.style.top = (rect.bottom + 6) + "px";
-      box.style.right = "12px";
+      if (rect.width === 0) {
+        if (box !== null) box.style.display = "none";
+        if (launcher !== null) launcher.style.display = "none";
+        return;
+      }
+      var top = (rect.bottom + 6) + "px";
+      if (launcher !== null) {
+        launcher.style.top = top;
+        launcher.style.right = "12px";
+        launcher.style.display = expanded ? "none" : "flex";
+      }
+      if (box !== null) {
+        box.style.top = top;
+        box.style.right = "12px";
+        box.style.display = expanded ? "flex" : "none";
+      }
     }
 
-    function makeButton(label, title, onClick) {
+    function expand() {
+      expanded = true;
+      place();
+      if (input !== null) { input.focus(); input.select(); }
+    }
+
+    function collapse() {
+      expanded = false;
+      if (input !== null) input.value = "";
+      if (counter !== null) counter.textContent = "";
+      clearMarks();
+      place();
+    }
+
+    function makeButton(label, title, onClick, extraCss) {
       var button = document.createElement("button");
       button.type = "button";
       button.textContent = label;
       button.title = title;
       button.setAttribute(UI_ATTR, "1");
-      button.style.cssText = "border:1px solid #2c2e33;background:transparent;color:#f2f2f2;border-radius:6px;width:22px;height:22px;font-size:11px;padding:0;cursor:pointer";
+      button.style.cssText = "border:1px solid #2c2e33;background:transparent;color:#f2f2f2;border-radius:6px;"
+        + "width:22px;height:22px;font-size:11px;padding:0;cursor:pointer" + (extraCss || "");
       button.addEventListener("click", onClick);
       return button;
     }
 
     function build() {
       if (document.getElementById("sig-find-root") !== null) return;
+
+      launcher = document.createElement("button");
+      launcher.id = "sig-find-launcher";
+      launcher.type = "button";
+      launcher.title = "Buscar nesta sessão";
+      launcher.setAttribute(UI_ATTR, "1");
+      launcher.setAttribute("aria-label", "Buscar nesta sessão");
+      launcher.style.cssText = "position:fixed;display:none;z-index:2147483000;right:12px;width:26px;height:26px;"
+        + "align-items:center;justify-content:center;padding:0;cursor:pointer;border-radius:50%;"
+        + "background:#1b1c1f;border:1px solid #2c2e33;color:#b9bcc4;box-shadow:0 2px 8px rgba(0,0,0,.4)";
+      launcher.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" '
+        + 'stroke-width="1.7" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.3 10.3L14 14"/></svg>';
+      launcher.addEventListener("click", function () { expand(); });
+
       box = document.createElement("div");
       box.id = "sig-find-root";
       box.setAttribute(UI_ATTR, "1");
-      box.style.cssText = "position:fixed;display:none;align-items:center;gap:6px;z-index:2147483000;padding:4px 8px;border-radius:8px;background:#1b1c1f;border:1px solid #2c2e33;box-shadow:0 2px 10px rgba(0,0,0,.45)";
+      box.style.cssText = panelCss();
 
       input = document.createElement("input");
       input.type = "text";
       input.placeholder = "Buscar nesta sessão";
       input.setAttribute(UI_ATTR, "1");
-      input.style.cssText = "width:140px;height:22px;font-size:12px;color:#f2f2f2;background:#151517;border:1px solid #2c2e33;border-radius:6px;padding:0 8px";
+      input.style.cssText = "width:140px;height:22px;font-size:12px;color:#f2f2f2;background:#151517;"
+        + "border:1px solid #2c2e33;border-radius:6px;padding:0 8px";
       input.addEventListener("input", function () { run(input.value, "first", 0); });
       input.addEventListener("keydown", function (event) {
         if (event.key === "Enter") { event.preventDefault(); run(input.value, "last", 0); }
-        if (event.key === "Escape") { input.value = ""; run("", "first", 0); }
+        if (event.key === "Escape") { event.preventDefault(); collapse(); }
       });
 
       counter = document.createElement("span");
@@ -163,23 +212,13 @@ window.__ModuleLoader__.load({
       box.appendChild(counter);
       box.appendChild(makeButton("↑", "Ocorrência anterior", function () { show(current - 1); }));
       box.appendChild(makeButton("↓", "Próxima ocorrência", function () { show(current + 1); }));
-      box.appendChild(makeButton("×", "Fechar busca", function () { box.style.display = "none"; clearMarks(); }));
-
-      toggle = makeButton("⌕", "Buscar nesta sessão", function () {
-        var hidden = box.style.display === "none";
-        place();
-        if (hidden) { box.style.display = "flex"; input.focus(); input.select(); }
-        else { box.style.display = "none"; clearMarks(); }
-      });
-      toggle.style.position = "fixed";
-      toggle.style.zIndex = "2147483000";
-      toggle.style.background = "#1b1c1f";
+      box.appendChild(makeButton("×", "Fechar busca", collapse));
 
       document.body.appendChild(box);
-      document.body.appendChild(toggle);
+      document.body.appendChild(launcher);
 
-      window.addEventListener("resize", function () { place(); });
-      document.addEventListener("scroll", function () { place(); }, true);
+      window.addEventListener("resize", place);
+      document.addEventListener("scroll", place, true);
       window.setInterval(place, 800);
       place();
     }
@@ -196,6 +235,7 @@ window.__ModuleLoader__.load({
         if (query === "") return;
         window.setTimeout(function () {
           if (input !== null) input.value = query;
+          expand();
           run(query, "last", 12);
         }, 250);
       }, true);
