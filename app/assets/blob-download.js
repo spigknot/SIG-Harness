@@ -111,7 +111,7 @@
       try {
         fetch("/api/sig/diag", {
           method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ version: "1.16.0", event: "attach-longpress", found: found })
+          body: JSON.stringify({ version: "1.17.0", event: "attach-longpress", found: found, cardHtml: String(card.outerHTML || "").slice(0, 400) })
         }).catch(function () {});
       } catch (error) { /* opcional */ }
     }, 160);
