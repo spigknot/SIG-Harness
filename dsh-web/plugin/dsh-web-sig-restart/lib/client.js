@@ -52,7 +52,7 @@ window.__ModuleLoader__.load({
         '[class*="triggerRow"] [class*="trigger"]{gap:0 !important}',
         // O gatilho nasce com flex:1 e ocupa a linha inteira: qualquer toque abria as
         // configurações. Preso ao tamanho do ícone, só ele responde.
-        '[class*="triggerRow"] button[class*="trigger"]{flex:0 0 auto !important;width:36px !important;padding:0 !important;justify-content:center !important}'
+        '[class*="triggerRow"] button[class*="trigger"]{flex:0 0 auto !important;width:36px !important;padding:0 !important;justify-content:center !important;margin-left:auto !important}'
       ].join("\n");
       document.head.appendChild(style);
     }
@@ -124,7 +124,7 @@ window.__ModuleLoader__.load({
 
       var box = button !== null && button.getBoundingClientRect ? button.getBoundingClientRect() : null;
       var width = 212;
-      var left = box === null ? window.innerWidth - width - 16 : Math.min(box.right - width, window.innerWidth - width - 12);
+      var left = box === null ? 12 : Math.min(box.left, window.innerWidth - width - 12);
       card.style.left = Math.max(12, left) + "px";
       card.style.top = "auto";
       card.style.bottom = box === null
@@ -169,14 +169,15 @@ window.__ModuleLoader__.load({
         button.type = "button";
         button.setAttribute("data-sig-restart", "1");
         button.style.cssText = "width:28px;height:28px;border-radius:999px;border:none;background:transparent;"
-          + "display:grid;place-items:center;padding:0;flex:none;margin-left:auto;cursor:pointer;color:" + RED;
+          + "display:grid;place-items:center;padding:0;flex:none;cursor:pointer;color:" + RED;
         button.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
           + 'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + ICON + '"/></svg>';
         button.title = "Reiniciar harness";
         button.setAttribute("aria-label", "Reiniciar harness");
       }
       button.style.display = "grid";
-      if (button.parentElement !== row) row.appendChild(button);
+      // À esquerda: o reiniciar fica longe do canto onde o dedo descansa.
+      if (row.firstChild !== button) row.insertBefore(button, row.firstChild);
     }
 
 /**

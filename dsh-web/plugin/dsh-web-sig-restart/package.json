@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-sig-restart",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
