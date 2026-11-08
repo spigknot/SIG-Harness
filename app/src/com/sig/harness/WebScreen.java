@@ -11,6 +11,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
+import android.provider.MediaStore;
+import android.os.Build;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -149,8 +151,6 @@ public final class WebScreen {
                     callback.onReceiveValue(null);
                     return false;
                 }
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
                 List<String> mimes = new ArrayList<String>();
                 String[] accept = params == null ? null : params.getAcceptTypes();
                 if (accept != null) {
@@ -158,19 +158,43 @@ public final class WebScreen {
                         if (type != null && !type.trim().isEmpty()) mimes.add(type.trim());
                     }
                 }
-                if (mimes.isEmpty()) {
-                    intent.setType("*/*");
-                } else if (mimes.size() == 1) {
-                    intent.setType(mimes.get(0));
-                } else {
-                    intent.setType("*/*");
-                    intent.putExtra(Intent.EXTRA_MIME_TYPES, mimes.toArray(new String[0]));
-                }
                 boolean multiple = params != null && params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE;
-                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multiple);
+
+                // Imagem: vai para a galeria (Photo Picker), que inclui Google Fotos e mostra
+                // primeiro o que foi tirado agora. Arquivo genérico continua no navegador
+                // de documentos.
+                boolean imagesOnly = !mimes.isEmpty();
+                for (String mime : mimes) {
+                    if (!mime.startsWith("image/")) { imagesOnly = false; break; }
+                }
+                Intent intent = imagesOnly ? photoPicker(multiple) : null;
+                if (intent == null) {
+                    intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    if (mimes.isEmpty()) {
+                        intent.setType("*/*");
+                    } else if (mimes.size() == 1) {
+                        intent.setType(mimes.get(0));
+                    } else {
+                        intent.setType("*/*");
+                        intent.putExtra(Intent.EXTRA_MIME_TYPES, mimes.toArray(new String[0]));
+                    }
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multiple);
+                }
                 try {
                     ((Activity) c).startActivityForResult(intent, FILE_PICK);
                 } catch (Throwable error) {
+                    if (imagesOnly) {
+                        // Photo Picker indisponível neste aparelho: cai no navegador de documentos.
+                        try {
+                            Intent fallback = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                            fallback.addCategory(Intent.CATEGORY_OPENABLE);
+                            fallback.setType(mimes.isEmpty() ? "image/*" : mimes.get(0));
+                            fallback.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multiple);
+                            ((Activity) c).startActivityForResult(fallback, FILE_PICK);
+                            return true;
+                        } catch (Throwable ignored) { }
+                    }
                     fileCallback = null;
                     callback.onReceiveValue(null);
                     return false;
@@ -302,6 +326,16 @@ public final class WebScreen {
      * Deliver the system file-picker result to the WebView. Called by the host
      * activity before its own attachment handling.
      */
+    /** Photo Picker do sistema (Android 13+) — galeria com Google Fotos; nulo se indisponível. */
+    private Intent photoPicker(boolean multiple) {
+        if (Build.VERSION.SDK_INT < 33) return null;
+        Intent intent = new Intent(MediaStore.ACTION_PICK_IMAGES);
+        intent.setType("image/*");
+        if (multiple) intent.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 10);
+        if (intent.resolveActivity(c.getPackageManager()) == null) return null;
+        return intent;
+    }
+
     public boolean handleFileChooserResult(int requestCode, int resultCode, Intent data) {
         if (requestCode != FILE_PICK) return false;
         ValueCallback<Uri[]> callback = fileCallback;
