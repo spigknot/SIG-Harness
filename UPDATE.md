@@ -1,37 +1,60 @@
-# UPDATE.md — publicar uma versão
+# UPDATE.md — tarefas de publicação de versão
 
-Procedimento de publicação. Leia inteiro antes de começar; não misture com outra tarefa.
+Leia **inteiro** antes de começar e não misture com outra tarefa.
+Cada tarefa tem um critério de pronto. Pular qualquer uma = versão **não publicada**.
 
-## 1. Gate (não publique com falha)
+> Automação: `bash tools/release.sh` executa T1–T9 (com `--dry-run` para só validar).
+> O procedimento manual abaixo continua valendo como referência do que o script faz.
+
+---
+
+## T1 — Repositório limpo e sincronizado
 
 ```bash
-git status --short --branch        # deve estar limpo e sincronizado
-bash dsh-web/apply.sh --auto --dry-run   # idempotência
-bash build.sh                      # gera dist/SIG-Harness.apk
+git status --short --branch
 ```
 
-Confira que **pristine + patches reproduzem o instalado** (10 arquivos, 0 divergentes).
-Se houver divergência, rode `bash dsh-web/capture.sh` antes e verifique de novo.
+**Pronto quando:** sem alterações pendentes e `main` = `origin/main`.
+Havendo trabalho não commitado: commitar antes (não misturar com a release).
 
-## 2. Versão
+## T2 — Camada `dsh-web` íntegra
 
-No `app/AndroidManifest.xml`:
+```bash
+bash dsh-web/apply.sh --auto --dry-run
+```
 
-- `android:versionCode` **sempre** sobe (+1) — é o que faz o Android aceitar a instalação
-  como atualização e o app detectar payload novo.
-- `android:versionName` segue o padrão `1.3.N`.
+**Pronto quando:** termina sem erro e mostra `profile ok` / `já aplicado` em todos os itens.
+Se você mexeu em arquivos do DSH instalado, rode `bash dsh-web/capture.sh` antes.
 
-## 3. Build e conferência
+## T3 — Patches reproduzem o instalado
+
+Reconstruir a partir do pristine e comparar byte a byte com o DSH instalado.
+
+**Pronto quando:** 10 arquivos iguais, 0 divergentes.
+
+## T4 — Incrementar a versão
+
+Em `app/AndroidManifest.xml`:
+
+- `android:versionCode` **sempre** +1 (o Android exige para aceitar a atualização;
+  também é o que faz o app detectar payload novo);
+- `android:versionName` no padrão `1.3.N`.
+
+**Pronto quando:** os dois campos conferem com a versão a publicar.
+
+## T5 — Build e conferência do APK
 
 ```bash
 bash build.sh
-aapt2 dump badging dist/SIG-Harness.apk | head -1     # versionCode/versionName
-apksigner verify dist/SIG-Harness.apk                 # assinatura
-unzip -p dist/SIG-Harness.apk assets/dsh-web.tgz | tar xzO \
-  dsh-web/plugin/dsh-web-sig-restart/package.json     # versão dos plugins no payload
+aapt2 dump badging dist/SIG-Harness.apk | head -1
+apksigner verify dist/SIG-Harness.apk
+unzip -p dist/SIG-Harness.apk assets/dsh-web.tgz | tar xzO dsh-web/plugin/dsh-web-sig-restart/package.json
 ```
 
-## 4. Commit
+**Pronto quando:** `versionCode`/`versionName` corretos, assinatura OK e o payload
+traz a versão atual dos plugins.
+
+## T6 — Commit e push
 
 ```bash
 git add -A
@@ -39,42 +62,54 @@ git commit -m "release: X.Y.Z (versionCode N)"
 git push origin main
 ```
 
-## 5. Tag e release (o APK **precisa** ir para a Release)
+**Pronto quando:** `main` remoto aponta para o commit da release.
 
-O `dist/` é ignorado pelo Git. O APK só chega ao usuário pela **Release**.
+## T7 — Tag da versão
 
 ```bash
 git tag -a vX.Y.Z -m "SIG Harness X.Y.Z (versionCode N)"
 git push origin vX.Y.Z
 ```
 
-Depois, criar a release e anexar o APK via API (token em `$GH_TOKEN`):
+**Pronto quando:** a tag existe no remoto.
+
+## T8 — Release **com o APK anexado** (obrigatório)
+
+O `dist/` é ignorado pelo Git: **sem a release, o APK não chega a ninguém.**
 
 ```bash
 API=https://api.github.com/repos/spigknot/SIG-Harness
 curl -sS -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'content-type: application/json' \
   -d '{"tag_name":"vX.Y.Z","name":"SIG Harness X.Y.Z","target_commitish":"main","body":"..."}' \
   $API/releases
-# upload_url vem na resposta; troque {?name,label} por ?name=SIG-Harness-X.Y.Z.apk
+# pegue upload_url na resposta e troque {?name,label} por ?name=SIG-Harness-X.Y.Z.apk
 curl -sS -X POST -H "Authorization: Bearer $GH_TOKEN" \
   -H 'content-type: application/vnd.android.package-archive' \
   --data-binary @dist/SIG-Harness.apk "<upload_url>"
 ```
 
-## 6. Confirmar de fora (sem autenticação)
+**Pronto quando:** a release existe e tem o asset `.apk` com o mesmo tamanho do arquivo local.
+
+## T9 — Conferir como usuário (sem autenticação)
 
 ```bash
 curl -sSI https://github.com/spigknot/SIG-Harness/releases/download/vX.Y.Z/SIG-Harness-X.Y.Z.apk
 ```
 
-Tem que dar `HTTP 200` com o tamanho do APK gerado. Só então a versão está publicada.
+**Pronto quando:** `HTTP 200` e `content-length` igual ao APK gerado.
 
-## Checklist
+---
 
-- [ ] gate verde (repositório limpo, patches íntegros, apply idempotente)
-- [ ] versionCode incrementado
-- [ ] APK assinado e payload com os plugins certos
-- [ ] commit e push em `main`
-- [ ] tag `vX.Y.Z` publicada
-- [ ] release criada **com o APK anexado**
-- [ ] download público respondendo 200
+## Definição de pronto
+
+- [ ] T1 repositório limpo e sincronizado
+- [ ] T2 `apply.sh` idempotente
+- [ ] T3 patches reproduzem o instalado (0 divergentes)
+- [ ] T4 `versionCode` incrementado e `versionName` correto
+- [ ] T5 APK assinado, com payload na versão certa
+- [ ] T6 commit e push em `main`
+- [ ] T7 tag `vX.Y.Z` publicada
+- [ ] T8 release criada **com o APK anexado**
+- [ ] T9 download público respondendo 200
+
+Faltando qualquer item, a versão **não** está publicada — mesmo que o commit exista.
