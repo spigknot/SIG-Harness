@@ -1,0 +1,91 @@
+--- a/node_modules/@deepseek-ai/node-addon-system/lib/flock.js
++++ b/node_modules/@deepseek-ai/node-addon-system/lib/flock.js
+@@ -1,48 +1,55 @@
+-/** Lazy POSIX flock entry; importing it does not load a native addon. */
++// ─── DSH_FLOCK_ANDROID_FFI ────────────────────────────────────────────────────────────────
++// Termux/Android 上 process.platform === "android"，而上游白名单只有 linux/darwin，
++// 且它的预编译原生包在本平台不存在（linux-arm64 那份还是 glibc 的，bionic 用不了）。
++// 这里改用 koffi 直接调 libc 的 flock(2) —— koffi 在 Termux 上可用，
++// 语义与原实现的契约完全一致（非阻塞尝试；竞争时以 EAGAIN 拒绝）。
++// 详见仓库 tools/flock-probe.mjs 的真机验证。
+ import { createRequire } from 'node:module';
+-import { dirname, join } from 'node:path';
+ import { getSystemErrorName } from 'node:util';
++
++const LOCK_EX = 2;
++const LOCK_NB = 4;
++
+ let binding;
+ function loadBinding() {
+-    if (binding)
+-        return binding;
+-    const { platform, arch } = process;
+-    if (platform !== 'linux' && platform !== 'darwin') {
+-        throw Object.assign(new Error(`flock is not supported on ${platform}-${arch}`), {
+-            code: 'ERR_FLOCK_UNSUPPORTED_PLATFORM',
+-            syscall: 'flock',
+-        });
++    if (binding) return binding;
++    const require = createRequire(import.meta.url);
++    const koffi = require('koffi');
++
++    let lib = null;
++    let lastError;
++    // 依次尝试：Termux 的 libc.so（bionic）-> glibc 常见命名 -> 裸名
++    for (const name of ['libc.so', 'libc.so.6', 'libc']) {
++        try { lib = koffi.load(name); break; } catch (error) { lastError = error; }
+     }
+-    let filename = 'system.node';
+-    if (platform === 'linux') {
+-        // Node's report types omit the libc field supplied by Linux reports.
+-        const report = process.report.getReport();
+-        filename = join(report.header.glibcVersionRuntime ? 'glibc' : 'musl', filename);
++    if (lib === null) {
++        throw Object.assign(
++            new Error(`flock: 无法通过 koffi 加载 libc: ${lastError?.message ?? 'unknown'}`),
++            { code: 'ERR_FLOCK_FFI_LIBC', syscall: 'flock' },
++        );
+     }
+-    const require = createRequire(import.meta.url);
+-    const manifest = require.resolve(`@deepseek-ai/node-addon-system-${platform}-${arch}/package.json`);
+-    binding = require(join(dirname(manifest), 'bin', filename));
++    const flock = lib.func('int flock(int fd, int operation)');
++    binding = { koffi, flock };
+     return binding;
+ }
++
+ /**
+- * Attempt an exclusive, nonblocking POSIX flock on the caller's descriptor.
+- * The syscall runs in asynchronous work, so acquisition can occur after this
+- * call returns. Keep fd open until the promise settles; the binding never
+- * opens, duplicates, or closes it. Closing the locked descriptor releases the
+- * lock once all descriptors for its open file description are closed.
+- * @param fd - Open file descriptor to lock; ownership remains with the caller.
+- * @returns A promise resolving to void on acquisition. Contention rejects with
+- *   EAGAIN/EWOULDBLOCK; other syscall failures also reject. Syscall errors carry
+- *   code, positive errno, and syscall='flock'. Native setup errors, unsupported
+- *   platforms, and addon loading failures reject; importing alone does not load it.
++ * 尝试对调用者的文件描述符加排他 flock 锁（非阻塞）。
++ * 与原实现一致：只在获得锁时 resolve；竞争以 EAGAIN 拒绝；其它失败带 errno 拒绝。
++ * @param {number} fd 已打开的描述符；所有权仍属调用者，本函数不打开/复制/关闭它。
++ * @returns {Promise<void>}
+  */
+ export async function tryLockExclusive(fd) {
+-    const errno = await new Promise((resolve) => {
+-        loadBinding().tryLock(fd, resolve);
++    const { koffi, flock } = loadBinding();
++    const result = await new Promise((resolve) => {
++        // 同步 FFI 调用：带 LOCK_NB 不会阻塞，因此可以直接在事件循环里调用
++        resolve(flock(fd, LOCK_EX | LOCK_NB));
+     });
+-    if (errno === 0)
+-        return;
+-    const code = getSystemErrorName(-errno);
++    if (result === 0) return;
++    // flock 失败返回 -1，具体原因在 errno 里
++    let errno = 0;
++    try { errno = koffi.errno(); } catch { errno = 0; }
++    const code = errno === 0 ? 'EIO' : getSystemErrorName(errno);
+     throw Object.assign(new Error(`${code}: flock failed`), {
+         code,
+         errno,

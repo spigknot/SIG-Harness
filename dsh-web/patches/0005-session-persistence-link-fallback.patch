@@ -1,0 +1,68 @@
+--- a/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js
+@@ -1,7 +1,7 @@
+ import z from "@deepseek-ai/schemastery";
+ import { SessionFormatUnsupportedMigrationError, createSessionFormatCatalogWithChildren, historicalSessionFormatCatalog, sessionFormatCatalog } from "@deepseek-ai/dsh-session-format-catalog";
+ import { readdirSync } from "node:fs";
+-import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, truncate } from "node:fs/promises";
++import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, truncate } from "node:fs/promises";
+ import { basename, dirname, isAbsolute, join, parse, resolve, toNamespacedPath } from "node:path";
+ import { performance } from "node:perf_hooks";
+ import { scheduler } from "node:timers/promises";
+@@ -2400,6 +2400,47 @@
+ * visible to this process immediately, reaches disk on its first append or
+ * flush, and never existed if the process crashes before that.
+ */
++// ─── DSH_LINK_ANDROID_FALLBACK ──────────────────────────────────────────────
++// Termux/Android 禁止 app 对内部存储调用 link(2)（实测 EACCES，连 EEXIST 都拿不到），
++// 而会话日志的原子发布依赖它 —— 于是 session/create 成功、agent 启动，
++// 但第一个回合写盘时 EACCES 失败并以 error 结束（浏览器里表现为"发了没反应"）。
++// 这里保留 link 的排他语义，仅在 link 被平台拒绝时回退到 rename 发布。
++// 详见仓库 tools/fs-probe.mjs 的真机测量。
++const __DSH_LINK_UNSUPPORTED = new Set(["EACCES", "EPERM", "ENOSYS", "EXDEV"]);
++async function __dshPublishLinkOrRename(fsOps, existing, replacement) {
++  try {
++    await fsOps.link(existing, replacement);
++    return;
++  } catch (error) {
++    const code = error && typeof error === "object" ? error.code : void 0;
++    if (!__DSH_LINK_UNSUPPORTED.has(code)) throw error;
++    // 平台不支持 link。先确认目标确实不存在，避免覆盖别人的成果。
++    let present = true;
++    try {
++      await fsOps.lstat(replacement);
++    } catch (probe) {
++      if (probe && typeof probe === "object" && probe.code === "ENOENT") present = false;
++      else throw probe;
++    }
++    if (present) {
++      throw Object.assign(
++        new Error("EEXIST: file already exists, link '" + existing + "' -> '" + replacement + "'"),
++        { code: "EEXIST" },
++      );
++    }
++    try {
++      await fsOps.rename(existing, replacement);
++    } catch (renameError) {
++      if (renameError && typeof renameError === "object" && renameError.code === "ENOENT") {
++        // 目标在确认之后又消失了 —— 当成竞争，让调用方按原语义重试 link
++        await fsOps.link(existing, replacement);
++        return;
++      }
++      throw renameError;
++    }
++  }
++}
++
+ var JsonlSessionPersistence = class extends SessionPersistence {
+ 	config;
+ 	tracker;
+@@ -3223,7 +3264,7 @@
+ 		const tmp = await this.writeSyncedTempFile(finalPath, content);
+ 		let linked = false;
+ 		try {
+-			await link(tmp, finalPath);
++			await __dshPublishLinkOrRename({ link, rename, lstat }, tmp, finalPath);
+ 			linked = true;
+ 		} finally {
+ 			/* v8 ignore next -- link failure is the TOCTOU/IO race guarded above; not reachable in test */

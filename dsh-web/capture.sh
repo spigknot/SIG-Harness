@@ -16,26 +16,31 @@ if [ "$INSTALLED" != "$DSH_VERSION" ]; then
 fi
 
 mkdir -p "$WORK/pristine"
-for pkg in $DSH_PACKAGES; do
-  [ -d "$WORK/pristine/$pkg/package" ] && continue
-  tb="$WORK/pristine/$pkg.tgz"
-  if [ ! -f "$tb" ]; then
-    node "$HERE/tools/pristine.mjs" "@deepseek-ai/$pkg" "$DSH_VERSION" "$tb" || true
+for spec in $DSH_PACKAGES; do
+  pkg="@@{spec%@*}"
+  ver="@@{spec##*@}"
+  if [ -f "$WORK/pristine/$pkg/.version" ] && [ "$(cat "$WORK/pristine/$pkg/.version")" = "$ver" ]; then
+    continue
   fi
-  if [ ! -f "$tb" ]; then
-    echo "cache miss em $pkg — baixando com npm pack" >&2
-    ( cd "$WORK/pristine" && npm pack "@deepseek-ai/$pkg@$DSH_VERSION" >/dev/null )
-    mv "$WORK/pristine/$pkg-$DSH_VERSION.tgz" "$tb"
+  tb="$WORK/pristine/$pkg.tgz"
+  rm -f "$tb"
+  if ! node "$HERE/tools/pristine.mjs" "@deepseek-ai/$pkg" "$ver" "$tb" 2>/dev/null; then
+    echo "cache miss em $pkg@$ver — baixando com npm pack" >&2
+    ( cd "$WORK/pristine" && npm pack "@deepseek-ai/$pkg@$ver" >/dev/null )
+    mv "$WORK/pristine/$pkg-$ver.tgz" "$tb"
   fi
   rm -rf "$WORK/pristine/$pkg"
   mkdir -p "$WORK/pristine/$pkg"
   tar xzf "$tb" -C "$WORK/pristine/$pkg"
+  printf '%s' "$ver" > "$WORK/pristine/$pkg/.version"
 done
 
 PATCH_SETS=(
   "0001-attachment-local-android-durability.patch|dsh-attachment-local/lib/index.js"
   "0002-conversation-error-detail.patch|dsh-client-ui-conversation/lib/client.js"
   "0003-directory-picker-start-directory.patch|dsh-host-directory-picker-browse/lib/index.js dsh-host-directory-picker-browse/README.md dsh-host-directory-picker-auto/lib/index.js dsh-host-directory-picker-auto/README.md"
+  "0004-node-addon-flock-android-ffi.patch|node-addon-system/lib/flock.js"
+  "0005-session-persistence-link-fallback.patch|dsh-session-persistence-jsonl/lib/index.js"
 )
 
 for set in "${PATCH_SETS[@]}"; do
@@ -54,3 +59,5 @@ for set in "${PATCH_SETS[@]}"; do
     echo "sem diferenças  $out (removido)"
   fi
 done
+
+capture_artifact

@@ -65,6 +65,21 @@ else
   echo "plugin ok     $PLUGIN"
 fi
 
+ARTIFACT_SRC="$HERE/artifacts/require_builtin-napi-v9-android-arm64.node"
+ARTIFACT_DST="$DSH/node_modules/node-addon-require-builtin/build/napi/napi-v9-android-arm64/require_builtin.node"
+if [ ! -f "$ARTIFACT_SRC" ]; then
+  echo "aviso: artefato nativo ausente, $ARTIFACT_DST não será instalado" >&2
+elif [ "$DRY" = 1 ]; then
+  echo "copiaria      addon nativo -> node-addon-require-builtin/build/napi/napi-v9-android-arm64/"
+elif [ -f "$ARTIFACT_DST" ] && cmp -s "$ARTIFACT_SRC" "$ARTIFACT_DST"; then
+  echo "addon ok      require_builtin.node (já no lugar)"
+else
+  mkdir -p "$(dirname "$ARTIFACT_DST")"
+  cp "$ARTIFACT_SRC" "$ARTIFACT_DST"
+  chmod 755 "$ARTIFACT_DST"
+  echo "addon ok      require_builtin.node instalado"
+fi
+
 if [ "$WITH_PROFILE" = 1 ]; then
   stamp="$(date +%Y%m%d-%H%M%S)"
   for f in cordis.patch.yml cordis.yml package.json pnpm-workspace.yaml; do
