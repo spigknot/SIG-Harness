@@ -91,7 +91,26 @@ window.__ModuleLoader__.load({
       keepTimer = window.setInterval(place, 900);
     }
 
+    /**
+     * Ajustes visuais do rodapé:
+     * - a engrenagem injetada pelo dsh-web-mobile (data-mobile-nav=quick-settings) ficou sem
+     *   ação quando desativamos a linha de conta — é ocultada;
+     * - o rótulo "Settings" sai, restando só o ícone.
+     */
+    function installFooterStyle() {
+      if (document.getElementById("sig-footer-style") !== null) return;
+      var style = document.createElement("style");
+      style.id = "sig-footer-style";
+      style.textContent = [
+        '[data-mobile-nav="quick-settings"], [data-mobile-nav="quick-settings-wrap"]{display:none !important}',
+        '[class*="triggerRow"] [class*="triggerLabel"]{display:none !important}',
+        '[class*="triggerRow"] [class*="trigger"]{gap:0 !important}'
+      ].join("\n");
+      document.head.appendChild(style);
+    }
+
     function apply() {
+      installFooterStyle();
       place();
       startKeepAlive();
       window.setTimeout(sendDiagnostics, 2500);
