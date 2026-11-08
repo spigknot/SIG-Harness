@@ -24,10 +24,23 @@ window.__ModuleLoader__.load({
             html: (nodes[i].outerHTML || "").slice(0, 320)
           });
         }
+        var probe = null;
+        if (button !== null && button.getBoundingClientRect) {
+          var box = button.getBoundingClientRect();
+          var top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          probe = {
+            box: [Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)],
+            topTag: top === null ? null : top.tagName,
+            topSig: top === null ? null : (top.getAttribute ? top.getAttribute("data-sig-restart") : null),
+            topNav: top === null ? null : (top.getAttribute ? top.getAttribute("data-mobile-nav") : null),
+            parent: button.parentElement === null ? null : String(button.parentElement.className),
+            pointer: getComputedStyle(button).pointerEvents
+          };
+        }
         fetch("/api/sig/diag", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ version: "1.5.0", href: String(location.href).slice(0, 120), nodes: rows })
+          body: JSON.stringify({ version: "1.7.0", probe: probe, href: String(location.href).slice(0, 120), nodes: rows })
         }).catch(function () {});
       } catch (error) { /* opcional */ }
     }
@@ -78,7 +91,6 @@ window.__ModuleLoader__.load({
           + "color:" + RED + ";transition:background-color .12s,color .12s";
         button.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
           + 'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + ICON + '"/></svg>';
-        button.addEventListener("click", activate);
         paint();
       }
       button.style.display = "grid";
@@ -109,8 +121,18 @@ window.__ModuleLoader__.load({
       document.head.appendChild(style);
     }
 
+    /** Clique delegado: sobrevive mesmo se o React recriar o botão na linha. */
+    function onDocumentClick(event) {
+      var target = event.target;
+      if (target === null || typeof target.closest !== "function") return;
+      var hit = target.closest("[data-sig-restart]");
+      if (hit === null) return;
+      activate(event);
+    }
+
     function apply() {
       installFooterStyle();
+      document.addEventListener("click", onDocumentClick, true);
       place();
       startKeepAlive();
       window.setTimeout(sendDiagnostics, 2500);
