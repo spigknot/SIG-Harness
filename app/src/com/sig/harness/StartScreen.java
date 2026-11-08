@@ -18,14 +18,15 @@ public final class StartScreen {
         void onOpenTermux();
         void onInstallTermux();
         void onOpenSettings();
+        void onCopyBootstrap();
     }
 
-    private static final String[] STEP_LABELS = {"Termux", "Bridge", "Autenticação", "Runtime"};
+    private static final String[] STEP_LABELS = {"Termux", "Pacotes", "Bridge", "Autenticação", "Runtime"};
     private final Context c;
     private final Host host;
     private final View root;
-    private final TextView[] stepGlyph = new TextView[4];
-    private final TextView[] stepDetail = new TextView[4];
+    private final TextView[] stepGlyph = new TextView[5];
+    private final TextView[] stepDetail = new TextView[5];
     private final TextView statusText;
     private final TextView primary;
     private final TextView secondary;
@@ -99,7 +100,7 @@ public final class StartScreen {
         card.addView(statusRow);
         LinearLayout steps = Ui.column(c);
         steps.setPadding(0, Ui.dp(c, 12), 0, 0);
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < STEP_LABELS.length; i++) {
             LinearLayout row = Ui.row(c);
             row.setPadding(0, Ui.dp(c, 5), 0, Ui.dp(c, 5));
             stepGlyph[i] = Ui.text(c, "○", 18f, Ui.FAINT, Ui.REGULAR);
@@ -171,6 +172,15 @@ public final class StartScreen {
             @Override public void onClick(View v) { if (!busy) host.onConnectExisting(); }
         });
         content.addView(secondary);
+
+        TextView fallback = Ui.text(c, "Comando manual (copiar)", 12.5f, Ui.MUTED, Ui.MEDIUM);
+        fallback.setGravity(Gravity.CENTER);
+        fallback.setPadding(0, Ui.dp(c, 14), 0, 0);
+        fallback.setClickable(true);
+        fallback.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { host.onCopyBootstrap(); }
+        });
+        content.addView(fallback);
 
         TextView foot = Ui.text(c, "O SIG fala direto com o DSH pelo Termux. A autenticação é automática — nada de navegador.", 11.5f, Ui.FAINT, Ui.REGULAR);
         foot.setGravity(Gravity.CENTER);

@@ -94,3 +94,19 @@
 - insert:
     - id: dsh-web-sig-restart
       name: 'dsh-web-sig-restart'
+
+# Plugin local do SIG Harness.
+- insert:
+    - id: dsh-web-search-tavily
+      name: 'dsh-web-search-tavily'
+
+# Busca na web: Tavily é o provedor padrão do seam ctx.web.
+- id: web
+  config:
+    searchProvider: tavily
+    fetchProvider: http
+
+# Plugin local do SIG Harness.
+- insert:
+    - id: dsh-web-sig-search-tavily
+      name: 'dsh-web-sig-search-tavily'

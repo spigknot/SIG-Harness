@@ -1,7 +1,39 @@
-# SIG Harness 1.3.2
+# SIG Harness 1.3.4
 
 Aplicativo Android **nativo** para usar o DeepSeek Harness no Termux sem abrir o Chrome e sem copiar o link de autenticação.
 
+## Instalar
+
+O APK tem cerca de 230 KB e **não traz o DeepSeek Harness dentro**: ele prepara o aparelho,
+instala o que falta e aplica as customizações. Um pacote só, com alguns toques seus.
+
+**Pré-requisitos (uma vez por aparelho):**
+
+1. Instale o **Termux** pelo [F-Droid](https://f-droid.org/packages/com.termux/) ou pelo
+   [GitHub](https://github.com/termux/termux-app/releases). A versão da Play Store está
+   descontinuada e não funciona com este app.
+2. Abra o Termux uma vez e libere comandos externos:
+
+   ```bash
+   mkdir -p ~/.termux
+   echo "allow-external-apps=true" >> ~/.termux/termux.properties
+   ```
+
+   Sem isso o Termux recusa receber comandos de outros aplicativos (e o SIG Harness avisa).
+3. Instale o APK do SIG Harness pela aba **Releases** deste repositório.
+
+**Depois, no SIG Harness:**
+
+- toque em **Iniciar Harness** e autorize o Termux quando o Android pedir;
+- o app instala o que faltar (`node`, `@deepseek-ai/dsh@0.2.1-rc.5`), aplica patches, plugins
+  e perfil, e abre a interface já autenticada;
+- a primeira execução baixa **~700 MB** e pode levar de 5 a 15 minutos. Tenha **~1 GB livre**.
+
+**Se o Termux recusar o comando**, toque em **Comando manual (copiar)** na tela inicial e cole
+o texto no Termux — um comando resolve, e depois é só voltar e tocar em Iniciar Harness.
+
+> Nas execuções seguintes o app só reaplica a camada `dsh-web` quando o APK muda. Nada é
+> baixado de novo.
 ## Localização
 
 O código deste projeto fica em `/storage/emulated/0/Projetos/sig-harness`.
@@ -31,6 +63,16 @@ O mesmo pacote serve para reaplicar à mão: `bash dsh-web/apply.sh`.
 
 O app abre **direto na interface web do DSH**, autenticada automaticamente pelo bridge. O antigo modo nativo (ACP) foi removido: nenhum runtime ACP é iniciado. O botão de microfone acima do enviar dita o prompt usando Meta Muse Voice ou Gemini 3.5 Transcribe, com as chaves configuradas no próprio app.
 
+## Novidades da 1.3.4
+
+- **Provedor de transcrição no microfone**: toque normal dita; **segurar ~0,5 s** abre o menu
+  de provedores no formato do seletor de modelo, com ✓ no ativo.
+- **Voz dentro da aba Modelos**: a seção própria saiu das configurações; o bloco *Voz* agora
+  fica no fim da aba de modelos, com os dois provedores e o botão **Chaves API**.
+- **Provedor sem chave não é selecionável**: a linha aparece como “requer chave” e o toque
+  abre o diálogo das chaves.
+- **Instalação guiada**: o app detecta Termux ausente, permissão bloqueada e pacotes
+  faltando, com passo a passo na tela inicial e comando manual como alternativa.
 ## Novidades da 1.3.2
 
 - **Sem barra superior**: a faixa nativa com título, voltar, engrenagem e recarregar foi removida; a interface web ocupa a tela toda.

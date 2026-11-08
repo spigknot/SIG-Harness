@@ -250,6 +250,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         @Override public void onOpenTermux() { TermuxRunner.openTermux(MainActivity.this); }
         @Override public void onInstallTermux() { openInstallPage(); }
         @Override public void onOpenSettings() { showVoiceSettings(); }
+        @Override public void onCopyBootstrap() { copyBootstrapCommand(); }
     };
 
     private void openInstallPage() {
@@ -496,6 +497,18 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         }, "sig-probe").start();
     }
 
+    /** Alternativa quando o Termux não aceita RUN_COMMAND: comando para colar no Termux. */
+    private void copyBootstrapCommand() {
+        String command = "pkg install -y nodejs && npm i -g @deepseek-ai/dsh@"
+                + TermuxRunner.DSH_BOOTSTRAP_VERSION
+                + " && echo 'pronto: volte ao SIG Harness e toque em Iniciar Harness'";
+        android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) { toast("Comando: " + command); return; }
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("SIG Harness", command));
+        toast("Comando copiado — cole no Termux e execute.");
+    }
+
     private void startHarnessFlow() {
         if (startFlow) return;
         // APK novo = pacote dsh-web novo: provisiona e reinicia o host antes de tudo,
@@ -550,7 +563,8 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             return;
         }
         startScreen.setStep(0, 2, "comando enviado");
-        startScreen.setStep(1, 1, "aguardando o bridge");
+        startScreen.setStep(1, 1, "instalando o que faltar");
+        startScreen.setStep(2, 1, "aguardando o bridge");
         toast("Iniciando o SIG Harness…");
         polling = true;
         pollDeadline = System.currentTimeMillis() + 90000L;
@@ -617,8 +631,9 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         prefs.setLastPort(bridgePort);
         configureBoot();
         if (startScreen != null) {
-            startScreen.setStep(1, 2, "conectado");
-            startScreen.setStep(2, 2, "token aceito");
+            startScreen.setStep(1, 2, "pronto");
+        startScreen.setStep(2, 2, "conectado");
+            startScreen.setStep(3, 2, "token aceito");
             startScreen.setStatus("Conectado · autenticando", Ui.TEXT_SOFT);
         }
         updateBanner();
@@ -626,8 +641,8 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         if (chatScreen != null) chatScreen.setConnection(true, null);
         if (startScreen != null) {
             startScreen.setBusy(true);
-            startScreen.setStep(2, 2, "token aceito");
-            startScreen.setStep(3, 1, "abrindo interface web");
+            startScreen.setStep(3, 2, "token aceito");
+            startScreen.setStep(4, 1, "abrindo interface web");
             startScreen.setStatus("Abrindo a interface web…", Ui.TEXT_SOFT);
         }
         doStartWeb();
@@ -652,7 +667,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         polling = false;
         startFlow = false;
         if (startScreen != null) {
-            startScreen.setStep(3, 2, "pronto");
+            startScreen.setStep(4, 2, "pronto");
             startScreen.setStatus("Harness pronto", Ui.GREEN);
             startScreen.setBusy(false);
         }
@@ -857,8 +872,8 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         bridgePort = welcome.optInt("port", bridgePort);
         bridgePid = welcome.optInt("pid", bridgePid);
         if (startScreen != null) {
-            startScreen.setStep(1, 2, "conectado");
-            startScreen.setStep(2, 2, "token aceito");
+            startScreen.setStep(2, 2, "conectado");
+            startScreen.setStep(3, 2, "token aceito");
         }
         if ("ready".equals(runtimeState)) onRuntimeReady();
     }
@@ -871,11 +886,11 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             runtimeState = state;
             if (startScreen != null) {
                 if ("starting".equals(state)) {
-                    startScreen.setStep(3, 1, detail);
+                    startScreen.setStep(4, 1, detail);
                     startScreen.setStatus("Iniciando o runtime…", Ui.TEXT_SOFT);
                     startScreen.setBusy(true);
                 } else if ("error".equals(state)) {
-                    startScreen.setStep(3, 3, detail);
+                    startScreen.setStep(4, 3, detail);
                     startScreen.setStatus("O runtime falhou", Ui.RED);
                     startScreen.setLog(detail);
                 }

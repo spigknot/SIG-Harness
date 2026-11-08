@@ -66,6 +66,9 @@ versão publicada sem release com APK anexado não conta como entregue.
 - Widget de busca dentro da sessão: **DOM puro**, nunca em slot do cabeçalho (já quebrou a barra).
 - Composer no celular: **Enter quebra linha**, envio **só** pelo botão. O editor é Lexical
   (`[data-composer-input]`); a quebra entra por `beforeinput insertLineBreak`.
+- Busca na web: **Tavily** (`dsh-web-search-tavily`, host plugin) fixado em
+  `searchProvider: tavily` na linha `web`; a chave vem do cofre/ambiente/`~/.tavily/config.json`,
+  nunca do YAML.
 - Rodapé da barra lateral: **⟳ vermelho à esquerda** (longe do canto, onde o polegar encosta)
   e **⚙ à direita**, com área de toque restrita ao ícone. O reiniciar sempre pede confirmação
   Sim/Não na tela.

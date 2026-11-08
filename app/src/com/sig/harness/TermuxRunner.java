@@ -9,6 +9,9 @@ import java.util.List;
 
 /** Starts the SIG bridge inside Termux using Termux's RUN_COMMAND intent. */
 public final class TermuxRunner {
+    /** Versão do DSH instalada no primeiro uso (espelha dsh-web/pin.env). */
+    static final String DSH_BOOTSTRAP_VERSION = "0.2.1-rc.5";
+
     public static final String TERMUX_PACKAGE = "com.termux";
     public static final String TERMUX_SERVICE = "com.termux.app.RunCommandService";
     public static final String ACTION_RUN_COMMAND = "com.termux.RUN_COMMAND";
@@ -79,6 +82,13 @@ public final class TermuxRunner {
                 : "";
         String script = prefix + "export PATH=/data/data/com.termux/files/usr/bin:$PATH; "
                 + "mkdir -p \"$HOME/.sig-harness\"; "
+                // Primeiro uso num aparelho limpo: instala o que falta antes de seguir.
+                // Idempotente — em aparelho pronto os dois comandos só conferem o PATH.
+                + "BOOT=\"$HOME/.sig-harness/bootstrap.log\"; "
+                + "command -v node >/dev/null 2>&1 || { echo \"[bootstrap] node\" >> \"$BOOT\"; "
+                + "yes | pkg update -y >> \"$BOOT\" 2>&1; yes | pkg install -y nodejs >> \"$BOOT\" 2>&1; }; "
+                + "command -v dsh >/dev/null 2>&1 || { echo \"[bootstrap] dsh " + DSH_BOOTSTRAP_VERSION + "\" >> \"$BOOT\"; "
+                + "npm i -g @deepseek-ai/dsh@" + DSH_BOOTSTRAP_VERSION + " >> \"$BOOT\" 2>&1; }; "
                 + "printf '%s' '" + bridgeBase64 + "' | base64 -d > \"$HOME/.sig-harness/sig-bridge.mjs\"; "
                 + "if [ ! -f \"$HOME/.sig-harness/acp.patch.yml\" ]; then printf '%s' '" + patchBase64 + "' | base64 -d > \"$HOME/.sig-harness/acp.patch.yml\"; fi; "
                 + "chmod 700 \"$HOME/.sig-harness/sig-bridge.mjs\"; "

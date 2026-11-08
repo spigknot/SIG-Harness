@@ -12,6 +12,8 @@ ambiente inteiro.
 | `patches/` | 5 diffs contra os pacotes publicados do DSH `0.2.1-rc.5` |
 | `artifacts/` | addon nativo compilado localmente (o pacote publicado não traz binário para Android) |
 | `plugin/dsh-web-sig-voice/` | plugin local que cria a aba **Voz** nas Configurações do DSH |
+| `plugin/dsh-web-search-tavily/` | plugin host que registra **Tavily** como provedor de busca do `ctx.web` |
+| `plugin/dsh-web-sig-search-tavily/` | página **Busca na web** nas Configurações: grava a chave no cofre via rota do host |
 | `profile/` | conteúdo de `~/.dsh/profiles/web` — `cordis.patch.yml` é a camada de configuração |
 | `apply.sh` | aplica os patches, instala o plugin e o addon |
 | `capture.sh` | regenera os patches e o artefato depois de atualizar o DSH |
@@ -73,6 +75,29 @@ como sobreposição abaixo da linha das abas e não participa da árvore React. 
 caixa, e o **×** (ou Esc) volta para a lupa. Uma versão anterior
 registrava um slot `conversation.session.header.views.trailing` dentro do cabeçalho e foi
 revertida — o widget fora do React não pode derrubar o cabeçalho da conversa.
+
+## Busca na web (Tavily)
+
+O `web_search` do modelo não fala com a Tavily diretamente: ele chama o seam `ctx.web`, que
+aceita vários provedores e **recusa a chamada quando há mais de um utilizável**. Por isso a
+linha `web` do profile fixa `searchProvider: tavily`, e o `config` dela é reescrito por
+inteiro — o `fetchProvider: http` tem de ser repetido, senão o `web_fetch` perde o provedor.
+
+O provedor é host puro (`plugin/dsh-web-search-tavily`), sem imports de `@deepseek-ai/*`:
+um plugin em `~/.dsh/profiles/web/node_modules` não resolve os pacotes do DSH, que vivem na
+instalação. O erro é reproduzido por forma (`name: 'WebError'` + `code`), que é o que o
+chamador roteia.
+
+A chave se grava em **Configurações → Busca na web** (`plugin/dsh-web-sig-search-tavily`):
+a página fala com `GET|POST /api/sig/tavily-key`, que o plugin host expõe via `webServer`, e a
+rota escreve no cofre com `ctx.credentials.set` — o valor nunca volta na resposta, nem para a
+própria página. A página mostra a **origem efetiva** (`stored` / `environment` / `cli-config`):
+sem isso ela diria "sem chave" enquanto a busca funciona pelo arquivo do CLI.
+
+A chave nunca entra no YAML. A resolução tenta, nesta ordem: cofre de credenciais do DSH
+(`TAVILY_API_KEY`), ambiente de lançamento, `process.env` e, por fim, o arquivo que o próprio
+CLI grava (`~/.tavily/config.json`, 0600). O provedor `deepseek-official` continua registrado
+e volta a atender se `searchProvider` for trocado.
 
 ## Raciocínio (reasoning effort)
 

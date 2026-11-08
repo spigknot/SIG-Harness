@@ -121,7 +121,7 @@ ensure_plugin_entry() {
   local cfg="$PROFILE/cordis.patch.yml"
   [ -d "$PROFILE" ] || return 0
   local need=""
-  for p in dsh-web-sig-voice dsh-web-sig-find dsh-web-sig-restart; do
+  for p in dsh-web-sig-voice dsh-web-sig-find dsh-web-sig-restart dsh-web-search-tavily dsh-web-sig-search-tavily; do
     grep -q "$p" "$cfg" 2>/dev/null || need="$need $p"
   done
   if [ -z "$need" ]; then
@@ -188,6 +188,28 @@ ensure_disabled_entries() {
   echo "profile ok    desligados:$need"
 }
 
+ensure_web_search_tavily() {
+  local cfg="$PROFILE/cordis.patch.yml"
+  [ -d "$PROFILE" ] || return 0
+  if grep -q 'searchProvider: tavily' "$cfg" 2>/dev/null; then
+    echo "profile ok    busca na web já usa Tavily"
+    return 0
+  fi
+  if [ "$DRY" = 1 ]; then
+    echo "configuraria  busca na web -> provedor tavily"
+    return 0
+  fi
+  local stripped
+  stripped="$(sed -e 's/#.*$//' "$cfg" 2>/dev/null | tr -d '[:space:]')"
+  if [ ! -f "$cfg" ] || [ -z "$stripped" ] || [ "$stripped" = "[]" ]; then
+    : > "$cfg"
+  fi
+  # `config` de uma linha existente é substituído por inteiro: o fetchProvider
+  # da base precisa ser repetido, senão o web_fetch perde o provedor.
+  printf '\n# Busca na web: Tavily é o provedor padrão do seam ctx.web.\n- id: web\n  config:\n    searchProvider: tavily\n    fetchProvider: http\n' >> "$cfg"
+  echo "profile ok    busca na web -> tavily"
+}
+
 # Perfil vazio ou alheio (sem a nossa camada de modelos) recebe o perfil completo
 # embutido no APK; um perfil já configurado só recebe as entradas pontuais.
 ensure_profile_baseline() {
@@ -221,6 +243,7 @@ if [ "$WITH_PROFILE" = 1 ]; then
 elif [ "$AUTO" = 1 ]; then
   ensure_profile_baseline
   ensure_plugin_entry
+  ensure_web_search_tavily
   ensure_index_entry
   ensure_disabled_entries
 fi
