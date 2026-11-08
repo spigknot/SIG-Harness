@@ -118,28 +118,36 @@ window.__ModuleLoader__.load({
       show(jump === "last" ? hits.length - 1 : 0);
     }
 
-    /** Both the launcher and the panel sit at the right end of the View tabs line. */
+    function hideWidgets() {
+      if (box !== null) box.style.display = "none";
+      if (launcher !== null) launcher.style.display = "none";
+    }
+
+    /**
+     * A lupa fica na própria linha das abas (Chat | Trajectory), à direita, e não
+     * abaixo dela: a linha de baixo é usada por anexos e barra de ações, e a lupa
+     * ficava sobre o botão de download.
+     */
     function place() {
       var tabs = document.querySelector("[data-conversation-tabs]");
-      if (tabs === null) {
-        if (box !== null) box.style.display = "none";
-        if (launcher !== null) launcher.style.display = "none";
-        return;
-      }
+      if (tabs === null) { hideWidgets(); return; }
       var rect = tabs.getBoundingClientRect();
-      if (rect.width === 0) {
-        if (box !== null) box.style.display = "none";
-        if (launcher !== null) launcher.style.display = "none";
-        return;
-      }
-      var top = (rect.bottom + 6) + "px";
+      if (rect.width === 0) { hideWidgets(); return; }
+
       if (launcher !== null) {
-        launcher.style.top = top;
+        launcher.style.top = (rect.top + Math.max(0, (rect.height - 26) / 2)) + "px";
         launcher.style.right = "12px";
         launcher.style.display = expanded ? "none" : "flex";
       }
+
       if (box !== null) {
-        box.style.top = top;
+        var height = box.offsetHeight || 30;
+        // Em tela estreita a caixa aberta desce, para não cobrir as abas.
+        var sameLine = window.innerWidth >= 520;
+        var top = sameLine
+          ? rect.top + Math.max(0, (rect.height - height) / 2)
+          : rect.bottom + 6;
+        box.style.top = top + "px";
         box.style.right = "12px";
         box.style.display = expanded ? "flex" : "none";
       }
