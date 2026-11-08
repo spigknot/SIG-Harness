@@ -111,17 +111,23 @@
       try {
         fetch("/api/sig/diag", {
           method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ version: "1.14.0", event: "attach-longpress", found: found })
+          body: JSON.stringify({ version: "1.16.0", event: "attach-longpress", found: found })
         }).catch(function () {});
       } catch (error) { /* opcional */ }
     }, 160);
   }
 
+  /** Elemento que representa um arquivo: link do markdown, card de anexo ou imagem. */
   function attachCard(node) {
     var current = node;
-    for (var depth = 0; depth < 5 && current !== null; depth++) {
-      if (current.className && String(current.className).indexOf("_attachments") >= 0) return current;
-      if (current.matches && current.matches("[class*=\"attachments\"] [class*=\"file\"]")) return current;
+    for (var depth = 0; depth < 6 && current !== null; depth++) {
+      var cls = String(current.className || "");
+      if (cls.indexOf("fileLink") >= 0) return current;
+      if (cls.indexOf("fileMention") >= 0) return current;
+      if (cls.indexOf("attachments") >= 0) return current;
+      if (cls.indexOf("attachment") >= 0) return current;
+      if (/[_-]file($|[A-Z_])/.test(cls)) return current;
+      if (current.tagName === "IMG" && current.closest("[class*='message'], [class*='bubble']") !== null) return current;
       current = current.parentElement;
     }
     return null;
