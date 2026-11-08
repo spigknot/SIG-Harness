@@ -81,6 +81,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private boolean runtimeWasReady;
     private String bridgeBase64;
     private String patchBase64;
+    private String payloadBase64;
 
     private View permissionOverlay;
     private JSONObject permissionData;
@@ -156,6 +157,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private String assetBase64(String name) {
         if ("sig-bridge.mjs".equals(name) && bridgeBase64 != null) return bridgeBase64;
         if ("acp.patch.yml".equals(name) && patchBase64 != null) return patchBase64;
+        if ("dsh-web.tgz".equals(name) && payloadBase64 != null) return payloadBase64;
         try {
             InputStream in = getAssets().open(name);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -164,10 +166,21 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             while ((read = in.read(buffer)) > 0) out.write(buffer, 0, read);
             in.close();
             String encoded = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
-            if ("sig-bridge.mjs".equals(name)) bridgeBase64 = encoded; else patchBase64 = encoded;
+            if ("sig-bridge.mjs".equals(name)) bridgeBase64 = encoded;
+            else if ("acp.patch.yml".equals(name)) patchBase64 = encoded;
+            else if ("dsh-web.tgz".equals(name)) payloadBase64 = encoded;
             return encoded;
         } catch (Exception e) {
             throw new IllegalStateException("Bridge embutido não encontrado: " + name, e);
+        }
+    }
+
+    /** Reads an asset that may be absent in older builds, without breaking the launch. */
+    private String assetBase64OrEmpty(String name) {
+        try {
+            return assetBase64(name);
+        } catch (RuntimeException e) {
+            return "";
         }
     }
 
@@ -516,7 +529,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         startScreen.setStatus("Iniciando o harness…", Ui.TEXT_SOFT);
         startScreen.setStep(0, 1, "enviando comando ao Termux");
         try {
-            TermuxRunner.startBridge(this, prefs.token(), prefs.cwd(), prefs.basePort(), assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"));
+            TermuxRunner.startBridge(this, prefs.token(), prefs.cwd(), prefs.basePort(), assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), assetBase64OrEmpty("dsh-web.tgz"));
         } catch (SecurityException se) {
             failStart("Permissão do Termux negada", "Conceda a permissão \"Executar comandos no Termux\" nos Ajustes do app e tente de novo.");
             return;

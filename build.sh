@@ -17,6 +17,10 @@ done
 # Keep the embedded bridge and ACP patch in sync with the bridge directory.
 cp "$ROOT/bridge/sig-bridge.mjs" "$APP/assets/sig-bridge.mjs"
 cp "$ROOT/bridge/acp.patch.yml" "$APP/assets/acp.patch.yml"
+# Camada web do DSH (patches, plugin da aba Voz, addon nativo) vai dentro do APK:
+# o bridge reaplica tudo no Termux a cada abertura, sem passo manual.
+rm -f "$APP/assets/dsh-web.tgz"
+tar czf "$APP/assets/dsh-web.tgz" -C "$ROOT" dsh-web
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD/gen" "$BUILD/classes" "$BUILD/dex" "$ROOT/dist"

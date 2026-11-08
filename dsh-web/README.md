@@ -36,6 +36,23 @@ ambiente inteiro.
 binário para Android, então ele foi compilado localmente com **NDK r30**, N-API v9, arm64,
 a partir do fonte `dsh-node-addon-require-builtin`. `SHA256SUMS` registra o hash instalado.
 
+## Instalação sem passo manual
+
+O `build.sh` empacota este diretório em `app/assets/dsh-web.tgz`. A cada abertura, o app envia o
+pacote ao Termux, o bridge descompacta em `~/.sig-harness/dsh-web` e roda
+`apply.sh --auto` antes de subir o `dsh web`:
+
+```bash
+printf '%s' '<base64>' | base64 -d > ~/.sig-harness/dsh-web.tgz
+rm -rf ~/.sig-harness/dsh-web
+tar xzf ~/.sig-harness/dsh-web.tgz -C ~/.sig-harness
+bash ~/.sig-harness/dsh-web/apply.sh --auto >> ~/.sig-harness/provision.log 2>&1
+```
+
+O modo `--auto` nunca falha e é idempotente: aplica só o que falta, pula os patches quando a
+versão do DSH não é a fixada em `pin.env` (com aviso no `provision.log`) e só **adiciona** a
+entrada do plugin no `cordis.patch.yml`, sem sobrescrever a configuração existente.
+
 ## Como usar
 
 Depois de instalar ou atualizar o DSH (o `npm i` sobrescreve patches e apaga o addon):

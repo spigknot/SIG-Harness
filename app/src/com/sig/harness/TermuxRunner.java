@@ -4,12 +4,22 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /** Starts the SIG bridge inside Termux using Termux's RUN_COMMAND intent. */
 public final class TermuxRunner {
     public static final String TERMUX_PACKAGE = "com.termux";
     public static final String TERMUX_SERVICE = "com.termux.app.RunCommandService";
     public static final String ACTION_RUN_COMMAND = "com.termux.RUN_COMMAND";
     public static final String PERMISSION = "com.termux.permission.RUN_COMMAND";
+
+    /**
+     * O kernel limita cada argumento do execve a MAX_ARG_STRLEN (128 KB). O script já
+     * carrega o bridge em base64 (~77 KB), então o pacote dsh-web viaja em argumentos
+     * separados e é remontado no shell com \"$1$2...\".
+     */
+    private static final int PAYLOAD_CHUNK = 60000;
 
     private TermuxRunner() { }
 
@@ -35,23 +45,41 @@ public final class TermuxRunner {
         return context.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED;
     }
 
-    public static Intent bridgeIntent(String token, String cwd, int port, String bridgeBase64, String patchBase64) {
+    public static Intent bridgeIntent(String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64) {
+        List<String> chunks = splitPayload(payloadBase64);
+        // Camada dsh-web embutida no APK: despeja o pacote, extrai e reaplica as
+        // customizações do DSH (patches, plugin da aba Voz e addon nativo) antes do bridge.
+        String provision = "";
+        if (!chunks.isEmpty()) {
+            provision = "printf '%s' " + chunkRefs(chunks.size()) + " | base64 -d > \"$HOME/.sig-harness/dsh-web.tgz\"; "
+                    + "rm -rf \"$HOME/.sig-harness/dsh-web\"; "
+                    + "tar xzf \"$HOME/.sig-harness/dsh-web.tgz\" -C \"$HOME/.sig-harness\" 2>/dev/null && "
+                    + "bash \"$HOME/.sig-harness/dsh-web/apply.sh\" --auto >> \"$HOME/.sig-harness/provision.log\" 2>&1; ";
+        }
         String script = "export PATH=/data/data/com.termux/files/usr/bin:$PATH; "
                 + "mkdir -p \"$HOME/.sig-harness\"; "
                 + "printf '%s' '" + bridgeBase64 + "' | base64 -d > \"$HOME/.sig-harness/sig-bridge.mjs\"; "
                 + "if [ ! -f \"$HOME/.sig-harness/acp.patch.yml\" ]; then printf '%s' '" + patchBase64 + "' | base64 -d > \"$HOME/.sig-harness/acp.patch.yml\"; fi; "
                 + "chmod 700 \"$HOME/.sig-harness/sig-bridge.mjs\"; "
+                + provision
                 + "exec /data/data/com.termux/files/usr/bin/node \"$HOME/.sig-harness/sig-bridge.mjs\""
                 + " --daemon --port " + port
                 + " --token " + quote(token)
                 + " --cwd " + quote(cwd)
                 + " --permission-mode danger-full-access"
                 + " --log \"$HOME/.sig-harness/bridge.log\"";
+        List<String> args = new ArrayList<String>();
+        args.add("-lc");
+        args.add(script);
+        if (!chunks.isEmpty()) {
+            args.add("sig-payload");
+            args.addAll(chunks);
+        }
         Intent intent = new Intent();
         intent.setClassName(TERMUX_PACKAGE, TERMUX_SERVICE);
         intent.setAction(ACTION_RUN_COMMAND);
         intent.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash");
-        intent.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", new String[]{"-lc", script});
+        intent.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", args.toArray(new String[0]));
         intent.putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home");
         intent.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
         intent.putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0");
@@ -60,8 +88,8 @@ public final class TermuxRunner {
         return intent;
     }
 
-    public static void startBridge(Context context, String token, String cwd, int port, String bridgeBase64, String patchBase64) {
-        context.startService(bridgeIntent(token, cwd, port, bridgeBase64, patchBase64));
+    public static void startBridge(Context context, String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64) {
+        context.startService(bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64));
     }
 
     public static void openTermux(Context context) {
@@ -70,6 +98,23 @@ public final class TermuxRunner {
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(launch);
         }
+    }
+
+    private static List<String> splitPayload(String payload) {
+        List<String> out = new ArrayList<String>();
+        if (payload == null || payload.isEmpty()) return out;
+        for (int i = 0; i < payload.length(); i += PAYLOAD_CHUNK) {
+            out.add(payload.substring(i, Math.min(payload.length(), i + PAYLOAD_CHUNK)));
+        }
+        return out;
+    }
+
+    /** Devolve \"$1$2$3\" — o shell concatena os blocos antes do base64 -d. */
+    private static String chunkRefs(int count) {
+        StringBuilder sb = new StringBuilder("\"");
+        for (int i = 1; i <= count; i++) sb.append('$').append(i);
+        sb.append('"');
+        return sb.toString();
     }
 
     private static String quote(String value) {

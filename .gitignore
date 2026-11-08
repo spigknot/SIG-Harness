@@ -1,4 +1,5 @@
 # Build outputs
+app/assets/dsh-web.tgz
 app/build/
 *.apk
 *.apk.idsig
