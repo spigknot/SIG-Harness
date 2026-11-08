@@ -72,11 +72,25 @@ fi
 if [ ! -d "$PROFILE" ]; then
   echo "profile ausente  $PROFILE (plugins e config não instalados)"
 else
+# Não rebaixa plugin: se o profile tem versão mais nova que o payload (correção feita à mão),
+# mantém a instalada. Evita que um APK antigo desfaça trabalho local.
+version_gt() {
+  [ "$1" = "$2" ] && return 1
+  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]
+}
+
   for src in "$HERE"/plugin/*/; do
     [ -d "$src" ] || continue
     PLUGIN="$(basename "$src")"
     if [ "$DRY" = 1 ]; then
       echo "copiaria      plugin $PLUGIN para $PROFILE/node_modules/"
+      continue
+    fi
+    dst="$PROFILE/node_modules/$PLUGIN"
+    payload_ver="$(node -p "require('$src/package.json').version" 2>/dev/null || echo 0)"
+    installed_ver="$(node -p "require('$dst/package.json').version" 2>/dev/null || echo 0)"
+    if [ -d "$dst" ] && version_gt "$installed_ver" "$payload_ver"; then
+      echo "plugin mantido $PLUGIN ($installed_ver > $payload_ver do payload)"
       continue
     fi
     mkdir -p "$PROFILE/node_modules"
