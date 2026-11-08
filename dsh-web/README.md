@@ -93,6 +93,19 @@ decisões que o DSH não toma sozinho:
 | Off | `thinking: { type: "disabled" }` |
 | Low / High / Max | `thinking: { type: "enabled" }` + `reasoning_effort` |
 
+## Alterar um plugin e vê-lo no navegador
+
+A URL de cada módulo do cliente carrega uma revisão (`&rev=…`) e o navegador cacheia por ela.
+Essa revisão **muda com a versão do pacote**, não com o conteúdo do `client.js`:
+
+```bash
+# depois de editar lib/client.js, suba a versão
+#   "version": "1.2.0"  →  "1.3.0"
+```
+
+Sem o `bump`, o host serve o arquivo novo, mas a página continua executando o módulo antigo —
+o sintoma é "mudei o arquivo e nada mudou na tela".
+
 ## Como usar
 
 Depois de instalar ou atualizar o DSH (o `npm i` sobrescreve patches e apaga o addon):
