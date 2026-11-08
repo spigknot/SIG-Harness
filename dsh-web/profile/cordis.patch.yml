@@ -89,3 +89,8 @@
   disabled: true
 - id: ui-settings-account
   disabled: true
+
+# Botão "Reiniciar harness" no rodapé da barra lateral.
+- insert:
+    - id: dsh-web-sig-restart
+      name: 'dsh-web-sig-restart'

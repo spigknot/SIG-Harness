@@ -46,6 +46,18 @@ public final class TermuxRunner {
     }
 
     public static Intent bridgeIntent(String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64) {
+        return bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64, false);
+    }
+
+    /**
+     * Reinício completo: derruba o dsh web em execução antes de subir a bridge de novo,
+     * para que os módulos editados em disco (patches, plugins) sejam carregados do zero.
+     */
+    public static void restartBridge(Context context, String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64) {
+        context.startService(bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64, true));
+    }
+
+    public static Intent bridgeIntent(String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64, boolean restart) {
         List<String> chunks = splitPayload(payloadBase64);
         // Camada dsh-web embutida no APK: despeja o pacote, extrai e reaplica as
         // customizações do DSH (patches, plugin da aba Voz e addon nativo) antes do bridge.
@@ -56,7 +68,8 @@ public final class TermuxRunner {
                     + "tar xzf \"$HOME/.sig-harness/dsh-web.tgz\" -C \"$HOME/.sig-harness\" 2>/dev/null && "
                     + "bash \"$HOME/.sig-harness/dsh-web/apply.sh\" --auto >> \"$HOME/.sig-harness/provision.log\" 2>&1; ";
         }
-        String script = "export PATH=/data/data/com.termux/files/usr/bin:$PATH; "
+        String prefix = restart ? "pkill -f 'bin.js web' >/dev/null 2>&1; sleep 1; " : "";
+        String script = prefix + "export PATH=/data/data/com.termux/files/usr/bin:$PATH; "
                 + "mkdir -p \"$HOME/.sig-harness\"; "
                 + "printf '%s' '" + bridgeBase64 + "' | base64 -d > \"$HOME/.sig-harness/sig-bridge.mjs\"; "
                 + "if [ ! -f \"$HOME/.sig-harness/acp.patch.yml\" ]; then printf '%s' '" + patchBase64 + "' | base64 -d > \"$HOME/.sig-harness/acp.patch.yml\"; fi; "

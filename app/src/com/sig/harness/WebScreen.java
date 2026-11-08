@@ -108,6 +108,7 @@ public final class WebScreen {
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
 
         web.addJavascriptInterface(new SigDownloadBridge(c), "SigDownload");
+        if (c instanceof AppBridge.Host) web.addJavascriptInterface(new AppBridge((AppBridge.Host) c), "SigApp");
         if (voice != null) web.addJavascriptInterface(voice, "SigVoice");
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {

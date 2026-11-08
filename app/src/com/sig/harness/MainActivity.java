@@ -38,7 +38,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Single-activity shell: start screen, conversations and native chat. */
-public final class MainActivity extends Activity implements BridgeClient.Listener {
+public final class MainActivity extends Activity implements BridgeClient.Listener, AppBridge.Host {
     private static final int REQ_TERMUX = 41;
     private static final int REQ_ATTACH = 42;
     private static final int REQ_MIC = 43;
@@ -82,6 +82,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private String bridgeBase64;
     private String patchBase64;
     private String payloadBase64;
+    private boolean restartingWeb;
 
     private View permissionOverlay;
     private JSONObject permissionData;
@@ -647,8 +648,42 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         updateBanner();
         if (sessionsScreen != null) sessionsScreen.setOnline(true, "Harness online");
         if (chatScreen != null) chatScreen.setConnection(true, null);
+        if (restartingWeb) {
+            restartingWeb = false;
+            doStartWeb();
+            return;
+        }
         if (screen != SCREEN_WEB) doStartWeb();
         if (first) toast("Harness online.");
+    }
+
+    @Override public void restartHarness() {
+        ui.post(new Runnable() {
+            @Override public void run() { doRestartHarness(); }
+        });
+    }
+
+    /** Mata o dsh web em execução, reenvia o comando ao Termux e recarrega a interface. */
+    private void doRestartHarness() {
+        restartingWeb = true;
+        polling = false;
+        scanning = false;
+        if (bridge != null) { try { bridge.close(); } catch (Throwable ignored) { } }
+        bridge = null;
+        runtimeState = "stopped";
+        runtimeWasReady = false;
+        if (webScreen != null) webScreen.setWaiting(true, "Reiniciando o harness…");
+        try {
+            TermuxRunner.restartBridge(this, prefs.token(), prefs.cwd(), prefs.basePort(),
+                    assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), assetBase64OrEmpty("dsh-web.tgz"));
+        } catch (Throwable error) {
+            restartingWeb = false;
+            toast("Não foi possível reiniciar: " + error);
+            return;
+        }
+        polling = true;
+        pollDeadline = System.currentTimeMillis() + 90000L;
+        ui.post(pollRunnable);
     }
 
     private void reconnect() {

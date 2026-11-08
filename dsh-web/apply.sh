@@ -107,7 +107,7 @@ ensure_plugin_entry() {
   local cfg="$PROFILE/cordis.patch.yml"
   [ -d "$PROFILE" ] || return 0
   local need=""
-  for p in dsh-web-sig-voice dsh-web-sig-find; do
+  for p in dsh-web-sig-voice dsh-web-sig-find dsh-web-sig-restart; do
     grep -q "$p" "$cfg" 2>/dev/null || need="$need $p"
   done
   if [ -z "$need" ]; then
