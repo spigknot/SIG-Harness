@@ -1,0 +1,15 @@
+# Build outputs
+app/build/
+*.apk
+*.apk.idsig
+
+# Signing material (build.sh regenerates app/sig.jks if missing)
+app/sig.jks
+*.keystore
+
+# Local/editor noise
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
