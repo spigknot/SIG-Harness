@@ -124,30 +124,42 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * A lupa fica na própria linha das abas (Chat | Trajectory), à direita, e não
-     * abaixo dela: a linha de baixo é usada por anexos e barra de ações, e a lupa
-     * ficava sobre o botão de download.
+     * A lupa fica logo ABAIXO da primeira faixa de conteúdo (anexo, arquivo entregue,
+     * barra de ações) para não cobrir os botões dela — mas só quando essa faixa é
+     * curta; depois de uma mensagem longa ela volta para a base das abas, em vez de
+     * descer pela conversa.
      */
+    function anchorBottom(tabs, rect) {
+      var base = rect.bottom + 6;
+      var header = tabs.closest("[class*='_header']");
+      var body = header === null ? null : header.nextElementSibling;
+      if (body === null) return base;
+      var row = body.firstElementChild;
+      if (row === null) return base;
+      var box = row.getBoundingClientRect();
+      if (box.height <= 0) return base;
+      var bottom = box.bottom + 8;
+      if (bottom <= base) return base;
+      if (bottom > base + 140) return base;
+      return bottom;
+    }
+
     function place() {
       var tabs = document.querySelector("[data-conversation-tabs]");
       if (tabs === null) { hideWidgets(); return; }
       var rect = tabs.getBoundingClientRect();
       if (rect.width === 0) { hideWidgets(); return; }
 
+      var below = anchorBottom(tabs, rect);
+
       if (launcher !== null) {
-        launcher.style.top = (rect.top + Math.max(0, (rect.height - 26) / 2)) + "px";
+        launcher.style.top = below + "px";
         launcher.style.right = "12px";
         launcher.style.display = expanded ? "none" : "flex";
       }
 
       if (box !== null) {
-        var height = box.offsetHeight || 30;
-        // Em tela estreita a caixa aberta desce, para não cobrir as abas.
-        var sameLine = window.innerWidth >= 520;
-        var top = sameLine
-          ? rect.top + Math.max(0, (rect.height - height) / 2)
-          : rect.bottom + 6;
-        box.style.top = top + "px";
+        box.style.top = below + "px";
         box.style.right = "12px";
         box.style.display = expanded ? "flex" : "none";
       }
