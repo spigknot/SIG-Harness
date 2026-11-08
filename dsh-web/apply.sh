@@ -151,6 +151,46 @@ ensure_index_entry() {
   echo "profile ok    índice de busca habilitado"
 }
 
+ensure_disabled_entries() {
+  local cfg="$PROFILE/cordis.patch.yml"
+  [ -f "$cfg" ] || return 0
+  local need=""
+  grep -q 'llm-deepseek-account' "$cfg" 2>/dev/null || need="$need llm-deepseek-account"
+  grep -q 'ui-settings-account' "$cfg" 2>/dev/null || need="$need ui-settings-account"
+  if [ -z "$need" ]; then
+    echo "profile ok    provedor de conta e UI já desligados"
+    return 0
+  fi
+  if [ "$DRY" = 1 ]; then
+    echo "desligaria    $need"
+    return 0
+  fi
+  local stripped
+  stripped="$(sed -e 's/#.*$//' "$cfg" 2>/dev/null | tr -d '[:space:]')"
+  if [ -z "$stripped" ] || [ "$stripped" = "[]" ]; then : > "$cfg"; fi
+  for entry in $need; do
+    printf "\n- id: %s\n  disabled: true\n" "$entry" >> "$cfg"
+  done
+  echo "profile ok    desligados:$need"
+}
+
+# Perfil vazio ou alheio (sem a nossa camada de modelos) recebe o perfil completo
+# embutido no APK; um perfil já configurado só recebe as entradas pontuais.
+ensure_profile_baseline() {
+  local cfg="$PROFILE/cordis.patch.yml"
+  [ -d "$PROFILE" ] || return 0
+  if [ -f "$cfg" ] && grep -q 'opencode-go' "$cfg" 2>/dev/null; then
+    return 0
+  fi
+  if [ "$DRY" = 1 ]; then
+    echo "copiaria      perfil completo (base sem a nossa camada)"
+    return 0
+  fi
+  if [ -f "$cfg" ]; then cp "$cfg" "$cfg.bak-$(date +%Y%m%d-%H%M%S)"; fi
+  cp "$HERE/profile/cordis.patch.yml" "$cfg"
+  echo "profile ok    perfil completo aplicado"
+}
+
 if [ "$WITH_PROFILE" = 1 ]; then
   stamp="$(date +%Y%m%d-%H%M%S)"
   for f in cordis.patch.yml cordis.yml package.json pnpm-workspace.yaml; do
@@ -165,8 +205,10 @@ if [ "$WITH_PROFILE" = 1 ]; then
     echo "profile ok    $f"
   done
 elif [ "$AUTO" = 1 ]; then
+  ensure_profile_baseline
   ensure_plugin_entry
   ensure_index_entry
+  ensure_disabled_entries
 fi
 
 echo
