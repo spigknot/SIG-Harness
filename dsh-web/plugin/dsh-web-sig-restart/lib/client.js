@@ -23,33 +23,28 @@ window.__ModuleLoader__.load({
         window.location.reload();
       }
 
-      var look = {
-        display: "flex", alignItems: "center", gap: "10px", width: "100%",
-        minHeight: "32px", padding: "6px 10px", border: 0, borderRadius: "8px",
-        background: "transparent", color: "var(--dsw-alias-label-secondary, #b9bcc4)",
-        fontSize: "13px", lineHeight: "20px", textAlign: "left", flex: "none",
-        cursor: busy ? "default" : "pointer", opacity: busy ? "0.55" : "1"
-      };
-
-      return jsx.jsxs("button", {
+      return jsx.jsx("button", {
         type: "button",
         onClick: activate,
         onMouseEnter: function (event) { if (!busy) event.currentTarget.style.background = "var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,.06))"; },
         onMouseLeave: function (event) { event.currentTarget.style.background = "transparent"; },
         title: busy ? "Reiniciando o harness…" : "Reiniciar harness (encerra o dsh web e sobe de novo)",
         "aria-label": "Reiniciar harness",
-        style: look,
-        children: [
-          jsx.jsx("svg", {
-            width: "15", height: "15", viewBox: "0 0 24 24", fill: "none",
-            stroke: "currentColor", "stroke-width": "1.8", "stroke-linecap": "round",
-            "stroke-linejoin": "round", "aria-hidden": "true", style: { flex: "none" },
-            children: jsx.jsx("path", { d: ICON })
-          }),
-          jsx.jsx("span", { children: busy ? "Reiniciando…" : "Reiniciar harness" })
-        ]
+        style: {
+          width: "28px", height: "28px", borderRadius: "999px", border: "none",
+          background: "transparent", color: "var(--dsw-alias-label-tertiary, #8b8f98)",
+          display: "grid", placeItems: "center", padding: 0, flex: "none",
+          cursor: busy ? "default" : "pointer", opacity: busy ? "0.5" : "1"
+        },
+        children: jsx.jsx("svg", {
+          width: "15", height: "15", viewBox: "0 0 24 24", fill: "none",
+          stroke: "currentColor", "stroke-width": "1.8", "stroke-linecap": "round",
+          "stroke-linejoin": "round", "aria-hidden": "true",
+          children: jsx.jsx("path", { d: ICON })
+        })
       });
     }
+
     /**
      * Ajustes do rodapé da barra lateral:
      * - a engrenagem da direita vem do dsh-web-mobile (data-mobile-nav=quick-settings) e ficou
@@ -63,8 +58,12 @@ window.__ModuleLoader__.load({
       style.textContent = [
         '[data-mobile-nav="quick-settings"], [data-mobile-nav="quick-settings-wrap"]{display:none !important}',
         '[class*="triggerRow"] [class*="triggerLabel"]{display:none !important}',
-        '[class*="triggerRow"] [class*="trigger"]{gap:0 !important}'
-      ].join("\n");
+        '[class*="triggerRow"] [class*="trigger"]{gap:0 !important}',
+        /* coloca ações e configurações na MESMA linha, com o reiniciar à direita */
+        '[class*="footArea"]{display:flex !important;align-items:center !important;gap:4px}',
+        '[class*="settingsArea"]{order:1;flex:1 1 auto;min-width:0}',
+        '[class*="footerActions"]{order:2;flex:none;margin-left:auto}'
+      ].join("\n");;
       document.head.appendChild(style);
     }
 
