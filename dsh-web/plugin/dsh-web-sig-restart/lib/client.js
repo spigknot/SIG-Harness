@@ -49,7 +49,10 @@ window.__ModuleLoader__.load({
       style.textContent = [
         '[data-mobile-nav="quick-settings"], [data-mobile-nav="quick-settings-wrap"]{display:none !important}',
         '[class*="triggerRow"] [class*="triggerLabel"]{display:none !important}',
-        '[class*="triggerRow"] [class*="trigger"]{gap:0 !important}'
+        '[class*="triggerRow"] [class*="trigger"]{gap:0 !important}',
+        // O gatilho nasce com flex:1 e ocupa a linha inteira: qualquer toque abria as
+        // configurações. Preso ao tamanho do ícone, só ele responde.
+        '[class*="triggerRow"] button[class*="trigger"]{flex:0 0 auto !important;width:36px !important;padding:0 !important;justify-content:center !important}'
       ].join("\n");
       document.head.appendChild(style);
     }
