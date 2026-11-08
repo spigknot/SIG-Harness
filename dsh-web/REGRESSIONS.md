@@ -4,6 +4,13 @@ Registro cronológico. Cada linha evita que o mesmo erro volte.
 
 ## 2026-11-08
 
+### Payload antigo rebaixava o plugin do profile
+- **Sintoma:** o CSS do rodapé sumia de novo a cada abertura, mesmo com o arquivo corrigido.
+- **Causa:** o APK instalado (v23) carregava o payload 1.5.0 e o reaplicava no boot e no botão
+  reiniciar, sobrescrevendo o 1.6.0 gravado no profile.
+- **Correção:** `apply.sh` compara versões e mantém a instalada quando é mais nova que a do payload.
+- **Regra:** mudou plugin → APK novo no mesmo ciclo. Correção só no profile é frágil.
+
 ### O APK reaplicava uma versão antiga do plugin no boot
 - **Sintoma:** corrigia o plugin, reiniciava, nada mudava na tela.
 - **Causa:** o APK instalado carregava `dsh-web.tgz` com a versão velha e o `apply.sh` fazia
