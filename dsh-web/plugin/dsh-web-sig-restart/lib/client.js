@@ -121,17 +121,43 @@ window.__ModuleLoader__.load({
       document.head.appendChild(style);
     }
 
+    var lastPointerAt = 0;
+
+    function eventLog(kind, target) {
+      try {
+        fetch("/api/sig/diag", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ version: "1.8.0", event: kind, tag: target === null ? null : target.tagName, sig: target === null ? null : (target.getAttribute ? target.getAttribute("data-sig-restart") : null), armed: armed })
+        }).catch(function () {});
+      } catch (error) { /* opcional */ }
+    }
+
+    /** Toque bruto: em WebView o click sintetizado pode ser cancelado antes de existir. */
+    function onPointerDown(event) {
+      var target = event.target;
+      if (target === null || typeof target.closest !== "function") return;
+      if (target.closest("[data-sig-restart]") === null) return;
+      lastPointerAt = Date.now();
+      eventLog("pointerdown", target);
+      activate(event);
+    }
+
     /** Clique delegado: sobrevive mesmo se o React recriar o botão na linha. */
     function onDocumentClick(event) {
       var target = event.target;
       if (target === null || typeof target.closest !== "function") return;
       var hit = target.closest("[data-sig-restart]");
       if (hit === null) return;
+      if (Date.now() - lastPointerAt < 800) { eventLog("click-suppressed", target); return; }
+      eventLog("click", target);
       activate(event);
     }
 
     function apply() {
       installFooterStyle();
+      document.addEventListener("pointerdown", onPointerDown, true);
+      document.addEventListener("touchstart", onPointerDown, { capture: true, passive: true });
       document.addEventListener("click", onDocumentClick, true);
       place();
       startKeepAlive();
