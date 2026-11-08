@@ -62,7 +62,8 @@ versão publicada sem release com APK anexado não conta como entregue.
 - Widget de busca dentro da sessão: **DOM puro**, nunca em slot do cabeçalho (já quebrou a barra).
 - Composer no celular: **Enter quebra linha**, envio **só** pelo botão. O editor é Lexical
   (`[data-composer-input]`); a quebra entra por `beforeinput insertLineBreak`.
-- Rodapé da barra lateral: **⚙ à esquerda (área de toque restrita ao ícone)** e **⟳ vermelho à
-  direita**, este último sempre com confirmação Sim/Não na tela.
+- Rodapé da barra lateral: **⟳ vermelho à esquerda** (longe do canto, onde o polegar encosta)
+  e **⚙ à direita**, com área de toque restrita ao ícone. O reiniciar sempre pede confirmação
+  Sim/Não na tela.
 - Anexo de imagem no WebView: **Photo Picker** (`MediaStore.ACTION_PICK_IMAGES`, Android 13+),
   nunca `ACTION_OPEN_DOCUMENT`. Arquivo genérico continua no navegador de documentos.
