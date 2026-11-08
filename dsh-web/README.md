@@ -22,7 +22,7 @@ ambiente inteiro.
 
 | Patch | Pacote | Por quê |
 |---|---|---|
-| `0001 attachment-local` | `dsh-attachment-local` | Android não permite *hard link* em dados de app: anexos falhavam. Passa a usar `rename` atômico e o `fsync` de diretórios ancestrais ignora `EACCES`/`EPERM` (o modo 771 de `/data/data` impede abrir os pais). |
+| `0001 attachment-local` | `dsh-attachment-local` | Android não permite *hard link* em dados de app: imagens funcionavam, mas **upload de arquivo falhava** porque o alias do objeto também usava `link` — agora cai para `copyFile` quando o link é recusado. O `rename` atômico e o `fsync` de ancestrais com `EACCES`/`EPERM` completam o conjunto. |
 | `0002 conversation` | `dsh-client-ui-conversation` | O toast de erro passa a mostrar `error.details.reason`, não só mensagem + código. |
 | `0003 directory-picker` | `dsh-host-directory-picker-browse`, `-auto` | Opção `startDirectory`: o seletor de pastas abre em `/storage/emulated/0/Projetos` em vez de `$HOME`, com fallback para home quando o diretório não é legível. |
 | `0004 node-addon flock` | `node-addon-system` | No Termux `process.platform` é `"android"`, fora da lista suportada, e o prebuild bionic não existe — dava `ERR_FLOCK_UNSUPPORTED_PLATFORM`. Passa a chamar `flock(2)` da libc via `koffi`, mantendo a semântica não bloqueante. |

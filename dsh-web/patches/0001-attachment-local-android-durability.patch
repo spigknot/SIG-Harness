@@ -1,5 +1,14 @@
 --- a/node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js
+@@ -4,7 +4,7 @@
+ import { dshCachePath, resolveDshHome } from "@deepseek-ai/dsh-home-paths";
+ import { createHash, randomUUID } from "node:crypto";
+ import { constants, createReadStream } from "node:fs";
+-import { chmod, link, mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
++import { chmod, copyFile, link, mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+ import { createLazyRequire } from "@deepseek-ai/dsh-lazy-require";
+ //#region lib/types/compression-limiter.js
+ /** Instance-owned concurrency bound for native image transformations. */
 @@ -388,7 +388,13 @@
  	let level = target;
  	while (level !== stop) {
@@ -15,7 +24,26 @@
  		/* v8 ignore next -- filesystem-root guard: callers pass a boundary that is an ancestor of path, so the walk reaches it first. */
  		if (parent === level) return;
  		level = parent;
-@@ -537,14 +543,22 @@
+@@ -479,9 +485,15 @@
+ 		try {
+ 			await link(source, target);
+ 		} catch (error) {
+-			/* v8 ignore next -- Private same-filesystem directories make EEXIST the only recoverable link race. */
+-			if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+-			if (await digestFile(target) !== sha256) throw new AttachmentError("Stored attachment failed integrity verification.", "ATTACHMENT_CORRUPT");
++			const code = error instanceof Error && "code" in error ? error.code : void 0;
++			if (code === "EEXIST") {
++				if (await digestFile(target) !== sha256) throw new AttachmentError("Stored attachment failed integrity verification.", "ATTACHMENT_CORRUPT");
++			} else if (code === "EACCES" || code === "EPERM" || code === "EXDEV" || code === "ENOSYS" || code === "ENOTSUP") {
++				/* Android recusa hard link em dados de app; o objeto é imutável e endereçado por conteúdo, então copiar tem o mesmo efeito. */
++				await copyFile(source, target, constants.COPYFILE_EXCL);
++			} else {
++				throw error;
++			}
+ 		}
+ 		await chmod(target, 256);
+ 		const stop = resolve(root);
+@@ -537,14 +549,22 @@
  	const parent = dirname(target);
  	try {
  		await ensureDurableDirectory(parent, staged.boundary);
