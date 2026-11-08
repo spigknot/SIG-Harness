@@ -1,0 +1,120 @@
+--- a/node_modules/@deepseek-ai/dsh-host-directory-picker-browse/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-browse/lib/index.js
+@@ -145,7 +145,16 @@
+ 	* default follows GitHub's web UI, which truncates directory listings at
+ 	* 1,000 entries.
+ 	*/
+-	static Config = z.object({ maxEntries: z.natural().min(1).default(1e3) });
++	static Config = z.object({
++		maxEntries: z.natural().min(1).default(1e3),
++		/**
++		* Absolute directory a listing without a path opens at. Empty (the
++		* default) keeps the host account's home directory; a relative value is
++		* ignored. An unreadable directory also falls back to home, so a stale
++		* configuration never leaves the picker with no readable level.
++		*/
++		startDirectory: z.string().default("")
++	});
+ 	browseCapability = {
+ 		kind: "browse",
+ 		list: (path, signal) => this.list(path, signal),
+@@ -165,7 +174,9 @@
+ 	async list(path, signal) {
+ 		const home = homedir();
+ 		if (path !== void 0 && !fullyQualified(path)) throw new DirectoryPickerError("directory-unreadable", path, `cannot list "${path}": not a fully qualified path`);
+-		const target = resolve(path ?? home);
++		const configured = path === void 0 ? (this.config.startDirectory ?? "").trim() : "";
++		const start = configured !== "" && fullyQualified(configured) ? resolve(configured) : void 0;
++		const target = resolve(path ?? start ?? home);
+ 		const keep = this.config.maxEntries + 1;
+ 		const window = [];
+ 		let evicted = false;
+@@ -194,6 +205,7 @@
+ 			}
+ 		} catch (error) {
+ 			signal?.throwIfAborted();
++			if (start !== void 0 && path === void 0 && target !== resolve(home)) return this.list(home, signal);
+ 			throw new DirectoryPickerError("directory-unreadable", target, `cannot list ${target}: ${messageOf(error)}`);
+ 		}
+ 		const entries = [];
+--- a/node_modules/@deepseek-ai/dsh-host-directory-picker-browse/README.md
++++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-browse/README.md
+@@ -44,6 +44,7 @@
+ | Field | Default | Meaning |
+ |---|---|---|
+ | `maxEntries` | `1,000` | Complete-result bound of one listing level; hidden rows count toward it |
++| `startDirectory` | `""` (home) | Absolute directory a path-less listing opens at; a relative value is ignored, and an unreadable directory falls back to home |
+ 
+ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-host-directory-picker-browse) is the exhaustive source for every accepted field and its JSDoc.
+ 
+--- a/node_modules/@deepseek-ai/dsh-host-directory-picker-auto/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-auto/lib/index.js
+@@ -2,6 +2,7 @@
+ import { accessSync, constants } from "node:fs";
+ import { delimiter, join } from "node:path";
+ import { isLoopbackHost } from "@deepseek-ai/dsh-host-webserver";
++import z from "@deepseek-ai/schemastery";
+ //#region lib/types/probe.js
+ /**
+ * PATH probe for the native backend's Linux chooser binaries: one boot-time
+@@ -119,13 +120,29 @@
+ 	browse: "@deepseek-ai/dsh-client-ui-directory-picker-browse"
+ };
+ /**
++* Configuration of the adaptive chooser. The opening directory reaches the
++* in-app browse interaction only: an OS chooser has no such setting, so the
++* native interaction ignores it.
++*/
++const Config = z.object({
++	/**
++	* Absolute directory the in-app browser opens at when a client asks for a
++	* listing without a path. Empty (the default) keeps the host account's home
++	* directory; a relative value is ignored, and an unreadable directory falls
++	* back to home.
++	*/
++	startDirectory: z.string().default("")
++});
++/**
+ * Resolve the interaction from one boot-time sample and mount its backend and
+ * surface as Loader entries; the effect's disposer removes both entries and
+ * joins their fibers' teardown, so unloading this plugin returns only after
+ * both faces of the mounted interaction (and their dependents) quiesced.
+ * @param ctx - cordis context carrying the injected services.
++* @param config - opening-directory configuration forwarded to the browse backend.
+ */
+-async function apply(ctx) {
++async function apply(ctx, config) {
++	const startDirectory = (config?.startDirectory ?? "").trim();
+ 	const backend = resolveDirectoryPickerBackend({
+ 		bindHost: ctx.webServer.host,
+ 		allowsRemoteAuthorities: ctx.connection.allowsRemoteAuthorities,
+@@ -147,7 +164,11 @@
+ 		};
+ 		try {
+ 			for (const name of [BACKEND_PACKAGES[backend], SURFACE_PACKAGES[backend]]) {
+-				const id = await ctx.loader.create({ name });
++				const mountConfig = name === BACKEND_PACKAGES[backend] && backend === "browse" && startDirectory !== "" ? { startDirectory } : void 0;
++				const id = await ctx.loader.create(mountConfig === void 0 ? { name } : {
++					name,
++					config: mountConfig
++				});
+ 				ids.push(id);
+ 				const entry = ctx.loader.resolve(id);
+ 				if (entry.fiber === void 0) throw new Error(`directory-picker-auto: failed to load ${name}`);
+@@ -161,4 +182,4 @@
+ 	}, "directory-picker-auto: interaction entries");
+ }
+ //#endregion
+-export { BACKEND_PACKAGES, SURFACE_PACKAGES, apply, canExecute, hasLinuxChooserBinary, inject, name, resolveDirectoryPickerBackend };
++export { BACKEND_PACKAGES, Config, SURFACE_PACKAGES, apply, canExecute, hasLinuxChooserBinary, inject, name, resolveDirectoryPickerBackend };
+--- a/node_modules/@deepseek-ai/dsh-host-directory-picker-auto/README.md
++++ b/node_modules/@deepseek-ai/dsh-host-directory-picker-auto/README.md
+@@ -35,6 +35,8 @@
+ 
+ The resolved interaction arrives as an ordinary Loader entry: the backend registers `ctx.directoryPicker`, and its browser half is discovered by the client module table exactly as a config row's would be, so the seam's one-row-swaps-both-faces invariant holds. Unloading the chooser removes the entry, unloading both faces with it. The sample happens exactly once per boot, so the mounted capability stays stable for the service lifetime.
+ 
++The optional `startDirectory` config names the absolute directory the in-app browse interaction opens at when a client asks for a listing without a path. It is forwarded to the mounted browse backend only: the native OS chooser has no such setting, so the native interaction ignores it, and an unreadable directory falls back to the host account's home directory.
++
+ ### Pinning an interaction
+ 
+ Pinning is not a config field here: compose the `-native` or `-browse` row directly instead of this one — that is the seam's documented swap point. Mounting the chooser and a backend row together fails loud (duplicate `directoryPicker` service, duplicate client flow in the `single` holes).

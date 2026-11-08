@@ -12,6 +12,19 @@ Build recomendado (o armazenamento compartilhado não executa scripts diretament
 
     bash ~/harness/build.sh
 
+
+## Estrutura do repositório
+
+| Caminho | O que é |
+|---|---|
+| `app/` | código Android (Java), manifest e recursos |
+| `bridge/` | bridge Node que sobe o `dsh web` e autentica o WebView |
+| `dsh-web/` | camada web do DSH: patches, plugin da aba Voz e profile — ver [dsh-web/README.md](dsh-web/README.md) |
+| `dist/` | APK gerado localmente (fora do Git) |
+
+As customizações da interface web não ficam dentro do APK: são aplicadas no DSH instalado
+pelo `dsh-web/apply.sh`. Depois de qualquer atualização do DSH, rode esse script de novo.
+
 O app abre **direto na interface web do DSH**, autenticada automaticamente pelo bridge. O antigo modo nativo (ACP) foi removido: nenhum runtime ACP é iniciado. O botão de microfone acima do enviar dita o prompt usando Meta Muse Voice ou Gemini 3.5 Transcribe, com as chaves configuradas no próprio app.
 
 ## Novidades da 1.3.2

@@ -1,0 +1,44 @@
+--- a/node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js
+@@ -388,7 +388,13 @@
+ 	let level = target;
+ 	while (level !== stop) {
+ 		const parent = dirname(level);
+-		await syncDirectory(parent);
++		try {
++			await syncDirectory(parent);
++		} catch (error) {
++			/* Android keeps /data/data mode 771: ancestors above the writable tree cannot be opened for fsync. */
++			if (error?.code !== "EACCES" && error?.code !== "EPERM") throw error;
++			return;
++		}
+ 		/* v8 ignore next -- filesystem-root guard: callers pass a boundary that is an ancestor of path, so the walk reaches it first. */
+ 		if (parent === level) return;
+ 		level = parent;
+@@ -537,14 +543,22 @@
+ 	const parent = dirname(target);
+ 	try {
+ 		await ensureDurableDirectory(parent, staged.boundary);
++		let moved = false;
+ 		try {
+ 			await link(staged.path, target);
+ 		} catch (error) {
+-			/* v8 ignore next -- Private same-filesystem directories make EEXIST the only recoverable link race. */
+-			if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+-			if (await digestFile(target) !== staged.sha256) throw new AttachmentError("Stored attachment failed integrity verification.", "ATTACHMENT_CORRUPT");
++			const code = error instanceof Error && "code" in error ? error.code : void 0;
++			if (code === "EEXIST") {
++				if (await digestFile(target) !== staged.sha256) throw new AttachmentError("Stored attachment failed integrity verification.", "ATTACHMENT_CORRUPT");
++			} else if (code === "EACCES" || code === "EPERM" || code === "EXDEV" || code === "ENOSYS" || code === "ENOTSUP") {
++				/* Android denies hard links inside app data; rename is atomic on the same filesystem. */
++				await rename(staged.path, target);
++				moved = true;
++			} else {
++				throw error;
++			}
+ 		}
+-		await unlink(staged.path);
++		if (!moved) await unlink(staged.path);
+ 		await chmod(target, 256);
+ 		const stop = resolve(root);
+ 		for (let level = parent; level !== stop; level = dirname(level)) {
