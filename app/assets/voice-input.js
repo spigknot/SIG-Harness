@@ -96,6 +96,38 @@
     card.style.top = Math.max(8, box.top - card.offsetHeight - 8) + 'px';
   }
 
+  /**
+   * Toque longo delegado no documento (fase de captura): o composer chama
+   * stopPropagation em ancestrais, então um listener no próprio botão nunca dispara.
+   */
+  function onGlobalPointerDown(event) {
+    var target = event.target;
+    if (target === null || typeof target.closest !== 'function') return;
+    if (button === null || target.closest('#sig-voice-button') === null) return;
+    var startX = event.clientX || 0;
+    var startY = event.clientY || 0;
+    if (pressTimer !== 0) window.clearTimeout(pressTimer);
+    pressTimer = window.setTimeout(function () {
+      pressTimer = 0;
+      suppressClick = true;
+      try { if (navigator.vibrate) navigator.vibrate(12); } catch (error) { /* sem vibração */ }
+      openMenu();
+      try { fetch('/api/sig/diag', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: '1.12.0', event: 'voice-longpress' }) }).catch(function () {}); } catch (error) { /* opcional */ }
+    }, 480);
+    var cancel = function (moveEvent) {
+      if (moveEvent && (Math.abs((moveEvent.clientX || 0) - startX) > 12 || Math.abs((moveEvent.clientY || 0) - startY) > 12)) {
+        if (pressTimer !== 0) { window.clearTimeout(pressTimer); pressTimer = 0; }
+      }
+    };
+    window.addEventListener('pointermove', cancel, true);
+    window.addEventListener('pointerup', function () {
+      window.removeEventListener('pointermove', cancel, true);
+      if (pressTimer !== 0) { window.clearTimeout(pressTimer); pressTimer = 0; }
+    }, { capture: true, once: true });
+  }
+
+  document.addEventListener('pointerdown', onGlobalPointerDown, true);
+  document.addEventListener('touchstart', onGlobalPointerDown, { capture: true, passive: true });
   function ensureNodes() {
     installStyle();
     if (button === null) {
@@ -105,20 +137,6 @@
       button.dataset.sigState = 'idle';
       button.setAttribute('aria-label', 'Ditar mensagem');
       button.innerHTML = MIC_SVG;
-      button.addEventListener('pointerdown', function () {
-        if (pressTimer !== 0) window.clearTimeout(pressTimer);
-        pressTimer = window.setTimeout(function () {
-          pressTimer = 0;
-          suppressClick = true;
-          try { if (navigator.vibrate) navigator.vibrate(12); } catch (error) { /* sem vibração */ }
-          openMenu();
-        }, 480);
-      });
-      ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (name) {
-        button.addEventListener(name, function () {
-          if (pressTimer !== 0) { window.clearTimeout(pressTimer); pressTimer = 0; }
-        });
-      });
       button.addEventListener('click', function (event) {
         event.preventDefault();
         event.stopPropagation();
