@@ -11,6 +11,9 @@ cd "$(dirname "$0")/.."
 DRY=0
 for arg in "$@"; do [ "$arg" = "--dry-run" ] && DRY=1; done
 say() { printf '\n== %s\n' "$1"; }
+# Token fora do .git/config: o helper expande GH_TOKEN só no momento do push.
+GITC=(-c 'credential.helper=!f() { echo username=x-access-token; echo password="$GH_TOKEN"; }; f')
+push_git() { git "${GITC[@]}" push "$@"; }
 note() { printf '   %s\n' "$1"; }
 
 say "T1 repositório limpo e sincronizado"
@@ -81,7 +84,7 @@ if [ "$DRY" = 1 ]; then
 else
   git add -A
   git commit -m "release: $VN (versionCode $VC)"
-  git push origin main
+  push_git origin main
   note "main atualizado"
 fi
 
@@ -90,7 +93,7 @@ if [ "$DRY" = 1 ]; then
   note "seria git tag -a $TAG"
 else
   git tag -a "$TAG" -m "SIG Harness $VN (versionCode $VC)"
-  git push origin "$TAG"
+  push_git origin "$TAG"
   note "tag publicada"
 fi
 
