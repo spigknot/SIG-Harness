@@ -61,6 +61,93 @@
     next();
   }
 
+
+  /**
+   * Toque longo num anexo baixa direto, sem passar pelo visualizador:
+   * o card é clicado (abre o visualizador), o link de download que já existe
+   * dentro dele é acionado e a tela volta ao fechar.
+   */
+  var attachTimer = 0;
+  var attachSuppress = false;
+
+  function findDownload() {
+    var direct = document.querySelector("a[download]");
+    if (direct !== null) return direct;
+    var labels = ["ownload", "Baixar", "baixar", "Salvar", "保存", "下载"];
+    var nodes = document.querySelectorAll("button, a");
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (node.offsetParent === null) continue;
+      var text = (node.getAttribute("aria-label") || "") + " " + (node.getAttribute("title") || "");
+      for (var j = 0; j < labels.length; j++) {
+        if (text.indexOf(labels[j]) >= 0) return node;
+      }
+    }
+    return null;
+  }
+
+  function closeViewer() {
+    var closers = ["Close", "Fechar", "Cancelar", "关闭", "取消"];
+    var nodes = document.querySelectorAll("button[aria-label]");
+    for (var i = 0; i < nodes.length; i++) {
+      var label = nodes[i].getAttribute("aria-label") || "";
+      for (var j = 0; j < closers.length; j++) {
+        if (label === closers[j]) { nodes[i].click(); return true; }
+      }
+    }
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return false;
+  }
+
+  function longPressDownload(card) {
+    try {
+      card.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    } catch (error) { /* segue */ }
+    window.setTimeout(function () {
+      var target = findDownload();
+      var found = target !== null;
+      if (found) { try { target.click(); } catch (error) { /* segue */ } }
+      window.setTimeout(function () { if (found) closeViewer(); }, 260);
+      try {
+        fetch("/api/sig/diag", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ version: "1.14.0", event: "attach-longpress", found: found })
+        }).catch(function () {});
+      } catch (error) { /* opcional */ }
+    }, 160);
+  }
+
+  function attachCard(node) {
+    var current = node;
+    for (var depth = 0; depth < 5 && current !== null; depth++) {
+      if (current.className && String(current.className).indexOf("_attachments") >= 0) return current;
+      if (current.matches && current.matches("[class*=\"attachments\"] [class*=\"file\"]")) return current;
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  document.addEventListener("pointerdown", function (event) {
+    var card = attachCard(event.target);
+    if (card === null) return;
+    if (attachTimer !== 0) window.clearTimeout(attachTimer);
+    attachTimer = window.setTimeout(function () {
+      attachTimer = 0;
+      attachSuppress = true;
+      try { if (navigator.vibrate) navigator.vibrate(12); } catch (error) { /* opcional */ }
+      longPressDownload(card);
+    }, 480);
+  }, true);
+
+  ["pointerup", "pointerleave", "pointercancel"].forEach(function (name) {
+    document.addEventListener(name, function () {
+      if (attachTimer !== 0) { window.clearTimeout(attachTimer); attachTimer = 0; }
+    }, true);
+  });
+
+  document.addEventListener("click", function (event) {
+    if (attachSuppress) { attachSuppress = false; event.stopPropagation(); event.preventDefault(); }
+  }, true);
   var click = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function () {
     try {
