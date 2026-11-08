@@ -164,6 +164,27 @@ window.__ModuleLoader__.load({
       return edge + DROP;
     }
 
+    /**
+     * Centro horizontal do canto do cabeçalho (o ícone da pasta, à direita), para a
+     * lupa ficar na mesma coluna. Sem esse marcador, cai na margem padrão.
+     */
+    function launcherLeft() {
+      var half = 13;
+      var corner = document.querySelector("[data-conversation-header-corner]");
+      if (corner !== null) {
+        var rect = corner.getBoundingClientRect();
+        var last = corner.lastElementChild;
+        if (last !== null) {
+          var childRect = last.getBoundingClientRect();
+          if (childRect.width > 0) rect = childRect;
+        }
+        if (rect.width > 0 && rect.right > half) {
+          return clamp(Math.round(rect.left + rect.width / 2 - half), 4, window.innerWidth - 32);
+        }
+      }
+      return Math.max(8, window.innerWidth - 38);
+    }
+
     function applyFrame(top, left, width) {
       if (launcher !== null) {
         launcher.style.top = top + "px";
@@ -191,7 +212,7 @@ window.__ModuleLoader__.load({
         applyFrame(clamp(saved.top, 4, window.innerHeight - 32), clamp(saved.left, 4, window.innerWidth - 32), true);
         return;
       }
-      applyFrame(defaultTop(tabs), Math.max(8, window.innerWidth - 38), false);
+      applyFrame(defaultTop(tabs), launcherLeft(), false);
     }
 
     function hideWidgets() {
