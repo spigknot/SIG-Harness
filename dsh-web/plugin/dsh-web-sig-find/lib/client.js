@@ -6,6 +6,7 @@ window.__ModuleLoader__.load({
 
     var MARK = "data-sig-find";
     var UI_ATTR = "data-sig-find-ui";
+    var STORE_KEY = "sig-find-position";
     var hits = [];
     var current = -1;
     var input = null;
@@ -13,10 +14,22 @@ window.__ModuleLoader__.load({
     var box = null;
     var launcher = null;
     var expanded = false;
+    var drag = null;
 
-    function panelCss() {
-      return "position:fixed;align-items:center;gap:6px;z-index:2147483000;padding:4px 8px;"
-        + "border-radius:8px;background:#1b1c1f;border:1px solid #2c2e33;box-shadow:0 2px 10px rgba(0,0,0,.45)";
+    function clamp(value, low, high) { return Math.max(low, Math.min(high, value)); }
+
+    function savedPosition() {
+      try {
+        var raw = window.localStorage.getItem(STORE_KEY);
+        if (raw === null) return null;
+        var parsed = JSON.parse(raw);
+        if (typeof parsed.top !== "number" || typeof parsed.left !== "number") return null;
+        return parsed;
+      } catch (e) { return null; }
+    }
+
+    function savePosition(top, left) {
+      try { window.localStorage.setItem(STORE_KEY, JSON.stringify({ top: top, left: left })); } catch (e) { /* modo restrito */ }
     }
 
     function scope() {
@@ -118,18 +131,7 @@ window.__ModuleLoader__.load({
       show(jump === "last" ? hits.length - 1 : 0);
     }
 
-    function hideWidgets() {
-      if (box !== null) box.style.display = "none";
-      if (launcher !== null) launcher.style.display = "none";
-    }
-
-    /**
-     * A lupa fica logo ABAIXO da primeira faixa de conteúdo (anexo, arquivo entregue,
-     * barra de ações) para não cobrir os botões dela — mas só quando essa faixa é
-     * curta; depois de uma mensagem longa ela volta para a base das abas, em vez de
-     * descer pela conversa.
-     */
-    /** Altura da faixa visível no ponto (x, y): ignora contêineres altos e os próprios widgets. */
+    /** Altura da faixa visível no ponto (x, y); ignora contêineres altos e os próprios widgets. */
     function rowBottomAt(x, y) {
       var stack = [];
       try { stack = document.elementsFromPoint(x, y) || []; } catch (e) { return null; }
@@ -145,21 +147,34 @@ window.__ModuleLoader__.load({
       return null;
     }
 
-    /**
-     * A lupa fica logo ABAIXO da faixa que ocupa aquele ponto (anexo, arquivo
-     * entregue, barra de ações), para não cobrir os botões dela. O que estiver ali
-     * é medido pelo próprio ponto, não por seletores: a marcação do DSH muda.
-     */
-    function anchorBottom(tabs, rect) {
+    /** Ponto padrão: logo abaixo da faixa que ocupa a linha seguinte às abas. */
+    function defaultTop(tabs) {
+      var rect = tabs.getBoundingClientRect();
       var base = rect.bottom + 6;
-      var x = Math.max(20, window.innerWidth - 30);
-      var y = base + 4;
-      var bottom = rowBottomAt(x, y);
-      if (bottom === null) return base;
-      var target = bottom + 8;
-      if (target <= base) return base;
-      if (target > base + 200) return base;
-      return target;
+      var y = base + 6;
+      var bottom = rowBottomAt(Math.round(window.innerWidth * 0.5), y);
+      if (bottom === null) bottom = rowBottomAt(Math.round(window.innerWidth - 30), y);
+      if (bottom !== null) {
+        var target = bottom + 8;
+        if (target > base && target <= base + 160) return target;
+      }
+      return base;
+    }
+
+    function applyFrame(top, left, width) {
+      if (launcher !== null) {
+        launcher.style.top = top + "px";
+        launcher.style.left = left + "px";
+        launcher.style.right = "auto";
+        launcher.style.display = expanded ? "none" : "flex";
+      }
+      if (box !== null) {
+        box.style.top = top + "px";
+        box.style.right = "12px";
+        box.style.left = "auto";
+        box.style.display = expanded ? "flex" : "none";
+        if (width === true) box.style.right = (window.innerWidth - left - 26) + "px";
+      }
     }
 
     function place() {
@@ -168,19 +183,17 @@ window.__ModuleLoader__.load({
       var rect = tabs.getBoundingClientRect();
       if (rect.width === 0) { hideWidgets(); return; }
 
-      var below = anchorBottom(tabs, rect);
-
-      if (launcher !== null) {
-        launcher.style.top = below + "px";
-        launcher.style.right = "12px";
-        launcher.style.display = expanded ? "none" : "flex";
+      var saved = savedPosition();
+      if (saved !== null) {
+        applyFrame(clamp(saved.top, 4, window.innerHeight - 32), clamp(saved.left, 4, window.innerWidth - 32), true);
+        return;
       }
+      applyFrame(defaultTop(tabs), Math.max(8, window.innerWidth - 38), false);
+    }
 
-      if (box !== null) {
-        box.style.top = below + "px";
-        box.style.right = "12px";
-        box.style.display = expanded ? "flex" : "none";
-      }
+    function hideWidgets() {
+      if (box !== null) box.style.display = "none";
+      if (launcher !== null) launcher.style.display = "none";
     }
 
     function expand() {
@@ -197,16 +210,48 @@ window.__ModuleLoader__.load({
       place();
     }
 
-    function makeButton(label, title, onClick, extraCss) {
+    function makeButton(label, title, onClick) {
       var button = document.createElement("button");
       button.type = "button";
       button.textContent = label;
       button.title = title;
       button.setAttribute(UI_ATTR, "1");
       button.style.cssText = "border:1px solid #2c2e33;background:transparent;color:#f2f2f2;border-radius:6px;"
-        + "width:22px;height:22px;font-size:11px;padding:0;cursor:pointer" + (extraCss || "");
+        + "width:22px;height:22px;font-size:11px;padding:0;cursor:pointer";
       button.addEventListener("click", onClick);
       return button;
+    }
+
+    /** Arrastar move a lupa; soltar grava a posição. Um toque curto abre a busca. */
+    function installDrag() {
+      launcher.addEventListener("pointerdown", function (event) {
+        var rect = launcher.getBoundingClientRect();
+        drag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top, moved: false };
+        try { launcher.setPointerCapture(event.pointerId); } catch (e) { /* sem captura */ }
+      });
+      launcher.addEventListener("pointermove", function (event) {
+        if (drag === null || event.pointerId !== drag.id) return;
+        var dx = event.clientX - drag.x;
+        var dy = event.clientY - drag.y;
+        if (drag.moved !== true && Math.abs(dx) + Math.abs(dy) < 8) return;
+        drag.moved = true;
+        var left = clamp(drag.left + dx, 4, window.innerWidth - 32);
+        var top = clamp(drag.top + dy, 4, window.innerHeight - 32);
+        applyFrame(top, left, true);
+      });
+      launcher.addEventListener("pointerup", function (event) {
+        if (drag === null || event.pointerId !== drag.id) return;
+        var moved = drag.moved;
+        drag = null;
+        if (moved) {
+          var rect = launcher.getBoundingClientRect();
+          savePosition(Math.round(rect.top), Math.round(rect.left));
+          place();
+        } else {
+          expand();
+        }
+      });
+      launcher.addEventListener("pointercancel", function () { drag = null; });
     }
 
     function build() {
@@ -215,20 +260,21 @@ window.__ModuleLoader__.load({
       launcher = document.createElement("button");
       launcher.id = "sig-find-launcher";
       launcher.type = "button";
-      launcher.title = "Buscar nesta sessão";
+      launcher.title = "Buscar nesta sessão (arraste para reposicionar)";
       launcher.setAttribute(UI_ATTR, "1");
       launcher.setAttribute("aria-label", "Buscar nesta sessão");
-      launcher.style.cssText = "position:fixed;display:none;z-index:2147483000;right:12px;width:26px;height:26px;"
+      launcher.style.cssText = "position:fixed;display:none;z-index:2147483000;width:26px;height:26px;"
         + "align-items:center;justify-content:center;padding:0;cursor:pointer;border-radius:50%;"
-        + "background:#1b1c1f;border:1px solid #2c2e33;color:#b9bcc4;box-shadow:0 2px 8px rgba(0,0,0,.4)";
+        + "background:#1b1c1f;border:1px solid #2c2e33;color:#b9bcc4;box-shadow:0 2px 8px rgba(0,0,0,.4);"
+        + "touch-action:none;user-select:none";
       launcher.innerHTML = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" '
         + 'stroke-width="1.7" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.3 10.3L14 14"/></svg>';
-      launcher.addEventListener("click", function () { expand(); });
 
       box = document.createElement("div");
       box.id = "sig-find-root";
       box.setAttribute(UI_ATTR, "1");
-      box.style.cssText = panelCss();
+      box.style.cssText = "position:fixed;display:none;align-items:center;gap:6px;z-index:2147483000;padding:4px 8px;"
+        + "border-radius:8px;background:#1b1c1f;border:1px solid #2c2e33;box-shadow:0 2px 10px rgba(0,0,0,.45)";
 
       input = document.createElement("input");
       input.type = "text";
@@ -254,6 +300,7 @@ window.__ModuleLoader__.load({
 
       document.body.appendChild(box);
       document.body.appendChild(launcher);
+      installDrag();
 
       launcher.style.transition = "opacity .18s ease";
       launcher.style.opacity = "0.15";
