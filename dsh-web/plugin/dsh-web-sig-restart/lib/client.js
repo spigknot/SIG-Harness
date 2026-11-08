@@ -179,8 +179,51 @@ window.__ModuleLoader__.load({
       if (button.parentElement !== row) row.appendChild(button);
     }
 
+/**
+ * Enter no composer: insere quebra de linha em vez de enviar.
+ * O envio passa a ser exclusivamente o botão de enviar. O editor é Lexical
+ * ([data-composer-input]); a quebra entra pelo mesmo canal do Shift+Enter
+ * (beforeinput insertLineBreak), com execCommand como reserva.
+ */
+function installComposerEnter() {
+  if (window.__sigComposerEnter === true) return;
+  window.__sigComposerEnter = true;
+
+  function isComposer(target) {
+    return target !== null && typeof target.closest === "function" && target.closest("[data-composer-input]") !== null;
+  }
+
+  function insertBreak(editor) {
+    var before = String(editor.textContent || "");
+    try {
+      editor.dispatchEvent(new InputEvent("beforeinput", {
+        inputType: "insertLineBreak",
+        bubbles: true,
+        cancelable: true,
+        isComposing: false
+      }));
+    } catch (error) { /* InputEvent indisponível */ }
+    window.setTimeout(function () {
+      if (String(editor.textContent || "") !== before) return;
+      try { editor.focus(); document.execCommand("insertLineBreak"); } catch (error) { /* reserva */ }
+    }, 40);
+  }
+
+  window.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter") return;
+    if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (event.isComposing || event.keyCode === 229) return;
+    var editor = event.target;
+    if (!isComposer(editor)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    insertBreak(editor);
+    post({ version: "1.10.0", event: "enter-newline" });
+  }, true);
+}
     function apply() {
       installFooterStyle();
+      installComposerEnter();
       document.addEventListener("pointerdown", onPointerDown, true);
       document.addEventListener("click", onDocumentClick, true);
       place();
