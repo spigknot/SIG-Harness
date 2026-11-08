@@ -68,7 +68,8 @@ if [ "$DRY" = 1 ]; then
   note "build pulado no dry-run"
 else
   bash build.sh >/dev/null
-  aapt2 dump badging dist/SIG-Harness.apk | head -1 | grep -q "versionCode='$VC'" || { echo "   ERRO: versionCode não confere" >&2; exit 1; }
+  BADGING=$(aapt2 dump badging dist/SIG-Harness.apk 2>/dev/null | sed -n '1p')
+  case "$BADGING" in *"versionCode='$VC'"*) : ;; *) echo "   ERRO: versionCode não confere ($BADGING)" >&2; exit 1 ;; esac
   apksigner verify dist/SIG-Harness.apk
   note "APK $VN (versionCode $VC) assinado"
 fi
