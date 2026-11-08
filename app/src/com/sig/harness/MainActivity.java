@@ -683,7 +683,9 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         }
         polling = true;
         pollDeadline = System.currentTimeMillis() + 90000L;
-        ui.post(pollRunnable);
+        // O processo antigo precisa sair antes da primeira varredura, senão a ponte
+        // morta ainda responde e devolve a URL expirada.
+        ui.postDelayed(pollRunnable, 2500L);
     }
 
     private void reconnect() {

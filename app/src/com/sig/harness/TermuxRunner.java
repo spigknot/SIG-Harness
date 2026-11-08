@@ -68,7 +68,15 @@ public final class TermuxRunner {
                     + "tar xzf \"$HOME/.sig-harness/dsh-web.tgz\" -C \"$HOME/.sig-harness\" 2>/dev/null && "
                     + "bash \"$HOME/.sig-harness/dsh-web/apply.sh\" --auto >> \"$HOME/.sig-harness/provision.log\" 2>&1; ";
         }
-        String prefix = restart ? "pkill -f 'bin.js web' >/dev/null 2>&1; sleep 1; " : "";
+        // "pkill -f 'bin.js web'" casaria com este próprio shell (o texto do comando contém
+        // o padrão) e mataria o wrapper antes do exec. O caminho correto é encerrar a bridge,
+        // que é dona do processo web e o derruba no shutdown; o pid está em bridge.json.
+        String prefix = restart
+                ? "PID=$(grep -o '" + "\"pid\":[0-9]*" + "' \"$HOME/.sig-harness/bridge.json\" 2>/dev/null | grep -o '[0-9]*'); "
+                + "[ -n \"$PID\" ] && kill \"$PID\" 2>/dev/null; "
+                + "STRAY=$(pgrep -f 'expose-internals.*bin[.]js web' 2>/dev/null); [ -n \"$STRAY\" ] && kill $STRAY 2>/dev/null; "
+                + "sleep 2; "
+                : "";
         String script = prefix + "export PATH=/data/data/com.termux/files/usr/bin:$PATH; "
                 + "mkdir -p \"$HOME/.sig-harness\"; "
                 + "printf '%s' '" + bridgeBase64 + "' | base64 -d > \"$HOME/.sig-harness/sig-bridge.mjs\"; "
