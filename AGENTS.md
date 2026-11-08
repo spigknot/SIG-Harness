@@ -60,3 +60,5 @@ Só depois: `git add -A`, commit e push. Nunca `--force`, nunca `--no-verify`.
   (`[data-composer-input]`); a quebra entra por `beforeinput insertLineBreak`.
 - Rodapé da barra lateral: **⚙ à esquerda (área de toque restrita ao ícone)** e **⟳ vermelho à
   direita**, este último sempre com confirmação Sim/Não na tela.
+- Anexo de imagem no WebView: **Photo Picker** (`MediaStore.ACTION_PICK_IMAGES`, Android 13+),
+  nunca `ACTION_OPEN_DOCUMENT`. Arquivo genérico continua no navegador de documentos.
