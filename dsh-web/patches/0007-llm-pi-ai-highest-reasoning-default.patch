@@ -1,0 +1,42 @@
+--- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
++++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
+@@ -1803,14 +1803,29 @@
+ * @param defaultLevel - the profile's configured effort, already validated.
+ * @returns the `reasoning` field, or an empty object when none can be offered.
+ */
++/**
++* Maior nível de raciocínio que o modelo aceita, ignorando "off".
++* Serve de padrão quando o profile não fixa um: o seletor deixa de oferecer
++* "Default" e a sessão já começa no nível mais alto disponível para o modelo.
++* @param model - resolved model descriptor.
++* @returns the highest supported non-off level, or undefined when none exists.
++*/
++function highestThinkingLevel(model) {
++	const levels = getSupportedThinkingLevels(model);
++	for (let index = levels.length - 1; index >= 0; index -= 1) {
++		if (levels[index] !== "off") return levels[index];
++	}
++	return void 0;
++}
+ function reasoningInfo(model, defaultLevel) {
+ 	if (!model.reasoning) return {};
++	const effective = defaultLevel ?? highestThinkingLevel(model);
+ 	return { reasoning: {
+ 		efforts: getSupportedThinkingLevels(model).map((level) => ({
+ 			id: ReasoningEffortId(level),
+ 			name: `${level.charAt(0).toUpperCase()}${level.slice(1)}`
+ 		})),
+-		...defaultLevel === void 0 ? {} : { defaultEffort: ReasoningEffortId(defaultLevel) }
++		...effective === void 0 ? {} : { defaultEffort: ReasoningEffortId(effective) }
+ 	} };
+ }
+ /** Merge deployment headers while removing case-insensitive attribution collisions. */
+@@ -1950,7 +1965,7 @@
+ 				...options,
+ 				tools: [ANTHROPIC_TOOL_UPDATE_PLACEHOLDER, ...tools]
+ 			} : options;
+-			const reasoning = resolveReasoningLevel(model, options.reasoningEffort ?? profile.reasoning);
++			const reasoning = resolveReasoningLevel(model, options.reasoningEffort ?? profile.reasoning ?? highestThinkingLevel(model));
+ 			const apiKey = await this.config.resolveApiKey(options.provider, profile);
+ 			const consumer = new AbortController();
+ 			const upstream = options.signal === void 0 ? consumer.signal : AbortSignal.any([options.signal, consumer.signal]);

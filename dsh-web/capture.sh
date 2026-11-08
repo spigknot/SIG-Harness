@@ -49,6 +49,7 @@ PATCH_SETS=(
   "0004-node-addon-flock-android-ffi.patch|node-addon-system/lib/flock.js"
   "0005-session-persistence-link-fallback.patch|dsh-session-persistence-jsonl/lib/index.js"
   "0006-workspace-enter-content-search.patch|dsh-client-ui-workspace/lib/client.js"
+  "0007-llm-pi-ai-highest-reasoning-default.patch|dsh-llm-pi-ai/lib/index.js"
 )
 
 rm -f "$HERE"/patches/0002-conversation-error-detail-and-views-slot.patch "$HERE"/patches/0006-conversation-views-trailing-slot.patch "$HERE"/patches/0007-workspace-enter-content-search.patch
