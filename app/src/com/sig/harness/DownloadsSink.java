@@ -27,6 +27,9 @@ public final class DownloadsSink {
     private final Uri uri;
     private final File file;
     private final OutputStream out;
+    /** No Android 10+ o conteúdo vai para um arquivo temporário e só entra em Downloads no fim. */
+    private File temp;
+    private final String mime;
     private boolean finished;
 
     private DownloadsSink(Context context, String name, Uri uri, File file, OutputStream out) {
@@ -35,6 +38,17 @@ public final class DownloadsSink {
         this.uri = uri;
         this.file = file;
         this.out = out;
+        this.mime = null;
+    }
+
+    private DownloadsSink(Context context, String name, File temp, String mime, OutputStream out) {
+        this.context = context;
+        this.name = name;
+        this.uri = null;
+        this.file = null;
+        this.temp = temp;
+        this.out = out;
+        this.mime = mime;
     }
 
     public static DownloadsSink open(Context context, String requestedName, String mime) throws IOException {
@@ -45,8 +59,10 @@ public final class DownloadsSink {
         return Legacy.open(context, name);
     }
 
+    private String publishedName;
+
     public String name() {
-        return name;
+        return publishedName == null ? name : publishedName;
     }
 
     public void write(byte[] buffer, int offset, int length) throws IOException {
@@ -58,6 +74,15 @@ public final class DownloadsSink {
         finished = true;
         out.flush();
         out.close();
+        if (temp != null) {
+            try {
+                String published = Q.commit(context, temp, name, mimeOf(name, mime));
+                this.publishedName = published;
+            } finally {
+                if (temp.exists()) temp.delete();
+            }
+            return;
+        }
         if (uri != null) {
             ContentValues values = new ContentValues();
             values.put(MediaStore.MediaColumns.IS_PENDING, 0);
@@ -73,6 +98,7 @@ public final class DownloadsSink {
         if (finished) return;
         finished = true;
         try { out.close(); } catch (Exception ignored) {}
+        if (temp != null) { try { temp.delete(); } catch (Exception ignored) {} }
         try {
             if (uri != null) context.getContentResolver().delete(uri, null, null);
             else if (file != null && file.exists()) file.delete();
@@ -130,22 +156,49 @@ public final class DownloadsSink {
     // ---------------------------------------------------------------- Android 10+
 
     private static final class Q {
+        /**
+         * Grava primeiro no cache do app e só publica em Downloads ao final.
+         * Gravar direto numa linha `IS_PENDING=1` deixava o arquivo eternamente
+         * pendente quando a atualização final falhava — o nome ficava `.pending-…`.
+         */
         static DownloadsSink open(Context context, String name, String mime) throws IOException {
+            File dir = new File(context.getCacheDir(), "downloads");
+            if (!dir.exists() && !dir.mkdirs()) throw new IOException("cache indisponível");
+            File temp = new File(dir, "sig-" + System.currentTimeMillis() + ".part");
+            return new DownloadsSink(context, name, temp, mime, new FileOutputStream(temp));
+        }
+
+        /** Publica o temporário em Downloads, já finalizado, sem estado pendente. */
+        static String commit(Context context, File temp, String name, String mime) throws IOException {
             ContentResolver resolver = context.getContentResolver();
             String unique = uniqueFor(resolver, name);
             ContentValues values = new ContentValues();
             values.put(MediaStore.Downloads.DISPLAY_NAME, unique);
             values.put(MediaStore.Downloads.MIME_TYPE, mime);
             values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/");
-            values.put(MediaStore.Downloads.IS_PENDING, 1);
+            values.put(MediaStore.Downloads.IS_PENDING, 0);
             Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
             if (uri == null) throw new IOException("MediaStore recusou o arquivo");
-            OutputStream out = resolver.openOutputStream(uri);
-            if (out == null) {
+            OutputStream target = null;
+            try {
+                target = resolver.openOutputStream(uri);
+                if (target == null) throw new IOException("não foi possível abrir o arquivo em Downloads");
+                java.io.FileInputStream in = new java.io.FileInputStream(temp);
+                try {
+                    byte[] buffer = new byte[64 * 1024];
+                    int read;
+                    while ((read = in.read(buffer)) != -1) target.write(buffer, 0, read);
+                    target.flush();
+                } finally {
+                    try { in.close(); } catch (Exception ignored) {}
+                }
+            } catch (IOException error) {
                 try { resolver.delete(uri, null, null); } catch (Exception ignored) {}
-                throw new IOException("não foi possível abrir o arquivo em Downloads");
+                throw error;
+            } finally {
+                if (target != null) { try { target.close(); } catch (Exception ignored) {} }
             }
-            return new DownloadsSink(context, unique, uri, null, out);
+            return unique;
         }
     }
 
