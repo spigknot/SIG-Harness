@@ -23,26 +23,33 @@ window.__ModuleLoader__.load({
         window.location.reload();
       }
 
-      return jsx.jsx("button", {
+      var look = {
+        display: "flex", alignItems: "center", gap: "10px", width: "100%",
+        minHeight: "32px", padding: "6px 10px", border: 0, borderRadius: "8px",
+        background: "transparent", color: "var(--dsw-alias-label-secondary, #b9bcc4)",
+        fontSize: "13px", lineHeight: "20px", textAlign: "left", flex: "none",
+        cursor: busy ? "default" : "pointer", opacity: busy ? "0.55" : "1"
+      };
+
+      return jsx.jsxs("button", {
         type: "button",
         onClick: activate,
-        title: busy ? "Reiniciando o harness…" : "Reiniciar harness",
+        onMouseEnter: function (event) { if (!busy) event.currentTarget.style.background = "var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,.06))"; },
+        onMouseLeave: function (event) { event.currentTarget.style.background = "transparent"; },
+        title: busy ? "Reiniciando o harness…" : "Reiniciar harness (encerra o dsh web e sobe de novo)",
         "aria-label": "Reiniciar harness",
-        style: {
-          width: "28px", height: "28px", borderRadius: "999px", border: "none",
-          background: "transparent", color: "var(--dsw-alias-label-tertiary, #8b8f98)",
-          display: "grid", placeItems: "center", padding: 0, cursor: busy ? "default" : "pointer",
-          opacity: busy ? "0.5" : "1", flex: "none"
-        },
-        children: jsx.jsx("svg", {
-          width: "15", height: "15", viewBox: "0 0 24 24", fill: "none",
-          stroke: "currentColor", "stroke-width": "1.8", "stroke-linecap": "round",
-          "stroke-linejoin": "round", "aria-hidden": "true",
-          children: jsx.jsx("path", { d: ICON })
-        })
+        style: look,
+        children: [
+          jsx.jsx("svg", {
+            width: "15", height: "15", viewBox: "0 0 24 24", fill: "none",
+            stroke: "currentColor", "stroke-width": "1.8", "stroke-linecap": "round",
+            "stroke-linejoin": "round", "aria-hidden": "true", style: { flex: "none" },
+            children: jsx.jsx("path", { d: ICON })
+          }),
+          jsx.jsx("span", { children: busy ? "Reiniciando…" : "Reiniciar harness" })
+        ]
       });
     }
-
     const inject = ["slots"];
 
     function apply(ctx) {
