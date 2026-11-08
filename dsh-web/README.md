@@ -76,18 +76,22 @@ revertida — o widget fora do React não pode derrubar o cabeçalho da conversa
 
 ## Raciocínio (reasoning effort)
 
-O menu vem dos níveis que o **provedor** declara por modelo. O perfil agora declara
-`reasoningEfforts` explicitamente, o que faz duas coisas:
+O menu vem dos níveis que o **provedor** declara por modelo; o patch `0007` acrescenta duas
+decisões que o DSH não toma sozinho:
 
-| Nível | Efeito no protocolo |
+- **Detecção de "off" pelo formato do provedor.** Cada protocolo sabe desligar o raciocínio de
+  um jeito (`thinking.type=disabled`, `enable_thinking=false`, `reasoning.enabled=false`…).
+  O catálogo marca `off: null` em boa parte dos modelos, o que suprimia o parâmetro e escondia
+  a opção. Agora, quando o `thinkingFormat` do modelo admite desligamento, o `off` é liberado;
+  quando não admite, continua oculto.
+- **Padrão = maior nível do modelo.** Sem nível configurado, o host escolhe o mais alto
+  (`max` para deepseek/glm, `xhigh` para o muse-spark) e o expõe como `defaultEffort` — o que
+  também remove a opção "Default" do menu.
+
+| Seleção | Payload |
 |---|---|
-| `off` | `thinking: { type: "disabled" }` — desliga de verdade (o catálogo do provedor marcava `off: null`, o que suprimia o parâmetro) |
-| `low` / `high` / `max` | `thinking: { type: "enabled" }` + `reasoning_effort` |
-| (nenhum) | sem `thinking` no payload — padrão do provedor |
-
-O patch `0007` remove o "Default" do menu: sem nível configurado, o host escolhe o
-**maior nível que aquele modelo suporta** (`max` para deepseek/glm, `xhigh` para o muse-spark,
-que não tem `max`).
+| Off | `thinking: { type: "disabled" }` |
+| Low / High / Max | `thinking: { type: "enabled" }` + `reasoning_effort` |
 
 ## Como usar
 

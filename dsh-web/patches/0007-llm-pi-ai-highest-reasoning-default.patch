@@ -1,6 +1,68 @@
 --- a/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js
-@@ -1803,14 +1803,29 @@
+@@ -582,6 +582,43 @@
+ * @param base - the installed catalog entry of the same id, when one exists.
+ * @returns the reasoning fields the materialized model carries.
+ */
++/**
++* Protocolos de raciocínio que sabem expressar "desligado" no fio da requisição
++* (thinking.type=disabled, enable_thinking=false, reasoning.enabled=false, …).
++* Para eles, um `off` ausente no mapa deve ser tratado como suportado.
++*/
++const REASONING_OFF_FORMATS = new Set([
++	"anthropic-messages",
++	"deepseek",
++	"zai",
++	"qwen",
++	"qwen-chat-template",
++	"chat-template",
++	"baseten",
++	"openrouter",
++	"together",
++	"string-thinking",
++	"ant-ling"
++]);
++/**
++* Libera o nível `off` quando o formato do provedor sabe desligar o raciocínio.
++*
++* O catálogo marca `off: null` em boa parte dos modelos, o que faz o pi-ai
++* suprimir `thinking.type=disabled` e esconder a opção no seletor. A remoção da
++* chave é o estado "suportado, enviar nada" que o próprio resolvedor de perfil
++* usa; o ramo do formato então monta o parâmetro de desligamento.
++* @param model - materialized model descriptor with its compat block.
++* @returns the same model, with `off` unlocked when the wire format can disable.
++*/
++function withReasoningOff(model) {
++	const format = model?.compat?.thinkingFormat;
++	if (typeof format !== "string" || !REASONING_OFF_FORMATS.has(format)) return model;
++	if (!model.reasoning || model.thinkingLevelMap === void 0) return model;
++	if (model.thinkingLevelMap.off !== null) return model;
++	const map = { ...model.thinkingLevelMap };
++	delete map.off;
++	return { ...model, thinkingLevelMap: map };
++}
+ function resolveModelReasoning(provider, entry, base) {
+ 	const efforts = entry.reasoningEfforts;
+ 	if (efforts === void 0) return { reasoning: base?.reasoning ?? false };
+@@ -695,7 +732,7 @@
+ 		const maxTokens = entry.maxTokens ?? base?.maxTokens ?? request.defaultMaxTokens;
+ 		if (!Number.isInteger(maxTokens) || maxTokens <= 0) invalid(provider, `model "${entry.id}" maxTokens must be a positive integer`);
+ 		if (entry.maxTokens !== void 0) configuredMaxTokens.set(entry.id, entry.maxTokens);
+-		return {
++		return withReasoningOff({
+ 			...base,
+ 			id: entry.id,
+ 			name: entry.name ?? base?.name ?? entry.id,
+@@ -708,7 +745,7 @@
+ 			maxTokens,
+ 			...resolveModelReasoning(provider, entry, base),
+ 			...resolveModelCompat(provider, entry, request.compat, base, api)
+-		};
++		});
+ 	};
+ 	const models = [];
+ 	for (const entry of entries) {
+@@ -1803,14 +1840,29 @@
  * @param defaultLevel - the profile's configured effort, already validated.
  * @returns the `reasoning` field, or an empty object when none can be offered.
  */
@@ -31,7 +93,7 @@
  	} };
  }
  /** Merge deployment headers while removing case-insensitive attribution collisions. */
-@@ -1950,7 +1965,7 @@
+@@ -1950,7 +2002,7 @@
  				...options,
  				tools: [ANTHROPIC_TOOL_UPDATE_PLACEHOLDER, ...tools]
  			} : options;
