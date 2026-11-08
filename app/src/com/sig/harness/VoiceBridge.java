@@ -78,6 +78,25 @@ public final class VoiceBridge {
         });
     }
 
+    /** Estado das chaves (apenas booleanos) e provedor ativo, para a aba de modelos. */
+    @JavascriptInterface public String keysState() {
+        boolean muse = prefs.museKey() != null && !prefs.museKey().trim().isEmpty();
+        boolean gemini = prefs.geminiKey() != null && !prefs.geminiKey().trim().isEmpty();
+        return "{\"muse\":" + muse + ",\"gemini\":" + gemini
+                + ",\"provider\":\"" + prefs.sttProvider() + "\"}";
+    }
+
+    /** Grava chaves; texto vazio mantém o valor atual. */
+    @JavascriptInterface public void setKeys(final String museKey, final String geminiKey) {
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                if (museKey != null && !museKey.trim().isEmpty()) prefs.setMuseKey(museKey.trim());
+                if (geminiKey != null && !geminiKey.trim().isEmpty()) prefs.setGeminiKey(geminiKey.trim());
+                host.voiceToast("Chaves de transcrição atualizadas");
+            }
+        });
+    }
+
     @JavascriptInterface public void cancel() {
         activity.runOnUiThread(new Runnable() {
             @Override public void run() {
