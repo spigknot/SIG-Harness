@@ -19,6 +19,8 @@ public final class VoiceBridge {
         void voiceError(String message);
         void voiceNeedsSettings(String reason);
         void openSettings();
+        /** Aviso curto na tela (troca de provedor, por exemplo). */
+        void voiceToast(String message);
         void requestMicPermission();
     }
 
@@ -52,6 +54,27 @@ public final class VoiceBridge {
     @JavascriptInterface public void openSettings() {
         activity.runOnUiThread(new Runnable() {
             @Override public void run() { host.openSettings(); }
+        });
+    }
+
+    /** Provedor de transcrição em uso: 'muse' ou 'gemini'. */
+    @JavascriptInterface public String sttProvider() {
+        return prefs.sttProvider();
+    }
+
+    /** Troca o provedor pelo menu de toque longo no microfone. */
+    @JavascriptInterface public void setSttProvider(final String id) {
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                String provider = "gemini".equals(id) ? "gemini" : "muse";
+                String label = "gemini".equals(provider) ? "Gemini 3.5 Transcribe" : "Meta Muse Voice";
+                prefs.setSttProvider(provider);
+                String key = "gemini".equals(provider) ? prefs.geminiKey() : prefs.museKey();
+                host.voiceToast("Transcrição: " + label);
+                if (key == null || key.trim().isEmpty()) {
+                    host.voiceNeedsSettings("Configure a chave de " + label + " para ditar.");
+                }
+            }
         });
     }
 

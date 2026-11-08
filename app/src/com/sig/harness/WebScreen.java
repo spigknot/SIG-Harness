@@ -68,6 +68,14 @@ public final class WebScreen {
                     @Override public void voicePartial(String text) { dispatchVoicePartial(text); }
                     @Override public void voiceFinal(String text) { dispatchVoiceFinal(text); }
                     @Override public void voiceError(String message) { dispatchVoiceError(message); }
+                    @Override public void voiceToast(final String message) {
+                        ((Activity) context).runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    }
+
                     @Override public void voiceNeedsSettings(String reason) {
                         Toast.makeText(c, reason, Toast.LENGTH_LONG).show();
                         host.onOpenSettings();

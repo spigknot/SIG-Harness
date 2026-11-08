@@ -9,6 +9,14 @@
   var button = null;
   var bubble = null;
   var noticeTimer = 0;
+  var menu = null;
+  var pressTimer = 0;
+  var suppressClick = false;
+
+  var PROVIDERS = [
+    { id: 'muse', label: 'Meta Muse Voice' },
+    { id: 'gemini', label: 'Gemini 3.5 Transcribe' }
+  ];
 
   var MIC_SVG = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><path d="M12 18v3"/></svg>';
   var STOP_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>';
@@ -30,7 +38,62 @@
       'color:var(--dsw-alias-label-primary,#f2f2f2);font:12.5px/1.35 -apple-system,Roboto,sans-serif;' +
       'box-shadow:0 6px 20px rgba(0,0,0,.35);display:none;pointer-events:none;white-space:nowrap;' +
       'overflow:hidden;text-overflow:ellipsis}';
+      '#sig-voice-menu{position:fixed;z-index:2147483000;min-width:214px;padding:6px;border-radius:12px;' +
+      'background:var(--dsw-alias-bg-overlay,rgba(30,30,32,.98));border:1px solid rgba(255,255,255,.12);' +
+      'box-shadow:0 10px 30px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:2px}' +
+      '#sig-voice-menu button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;' +
+      'border-radius:8px;padding:9px 10px;background:transparent;color:var(--dsw-alias-label-primary,#f2f2f2);' +
+      'font:13px/1.25 -apple-system,Roboto,sans-serif;cursor:pointer}' +
+      '#sig-voice-menu button:hover{background:rgba(255,255,255,.08)}' +
+      "#sig-voice-menu button[data-active='1']{font-weight:600}" +
+      '#sig-voice-menu .sig-check{margin-left:auto;color:var(--dsw-alias-button-primary-fill,#4d6bfe);font-size:12px}';
     document.head.appendChild(style);
+  }
+
+  function currentProvider() {
+    try { return String(bridge.sttProvider() || 'gemini'); } catch (error) { return 'gemini'; }
+  }
+
+  function closeMenu() {
+    if (menu !== null && menu.parentNode !== null) menu.parentNode.removeChild(menu);
+    menu = null;
+  }
+
+  /** Menu de provedores: mesmo formato do seletor de modelo/raciocínio. */
+  function openMenu() {
+    closeMenu();
+    var active = currentProvider();
+    var card = document.createElement('div');
+    card.id = 'sig-voice-menu';
+    card.setAttribute('role', 'menu');
+    for (var i = 0; i < PROVIDERS.length; i++) {
+      (function (provider) {
+        var item = document.createElement('button');
+        item.type = 'button';
+        item.setAttribute('role', 'menuitem');
+        item.dataset.active = provider.id === active ? '1' : '0';
+        item.textContent = provider.label;
+        if (provider.id === active) {
+          var check = document.createElement('span');
+          check.className = 'sig-check';
+          check.textContent = '\u2713';
+          item.appendChild(check);
+        }
+        item.addEventListener('click', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          try { bridge.setSttProvider(provider.id); } catch (error) { /* bridge ausente */ }
+          closeMenu();
+        });
+        card.appendChild(item);
+      })(PROVIDERS[i]);
+    }
+    document.body.appendChild(card);
+    menu = card;
+    var box = button.getBoundingClientRect();
+    var left = Math.min(box.left, window.innerWidth - card.offsetWidth - 8);
+    card.style.left = Math.max(8, left) + 'px';
+    card.style.top = Math.max(8, box.top - card.offsetHeight - 8) + 'px';
   }
 
   function ensureNodes() {
@@ -42,9 +105,24 @@
       button.dataset.sigState = 'idle';
       button.setAttribute('aria-label', 'Ditar mensagem');
       button.innerHTML = MIC_SVG;
+      button.addEventListener('pointerdown', function () {
+        if (pressTimer !== 0) window.clearTimeout(pressTimer);
+        pressTimer = window.setTimeout(function () {
+          pressTimer = 0;
+          suppressClick = true;
+          try { if (navigator.vibrate) navigator.vibrate(12); } catch (error) { /* sem vibração */ }
+          openMenu();
+        }, 480);
+      });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (name) {
+        button.addEventListener(name, function () {
+          if (pressTimer !== 0) { window.clearTimeout(pressTimer); pressTimer = 0; }
+        });
+      });
       button.addEventListener('click', function (event) {
         event.preventDefault();
         event.stopPropagation();
+        if (suppressClick) { suppressClick = false; return; }
         try {
           if (state === 'listening' || state === 'connecting' || state === 'finishing') bridge.stop();
           else bridge.start();
@@ -58,6 +136,12 @@
       document.body.appendChild(bubble);
     }
   }
+
+  document.addEventListener('pointerdown', function (event) {
+    if (menu === null) return;
+    if (menu.contains(event.target) || event.target === button) return;
+    closeMenu();
+  }, true);
 
   function sendButton() {
     var card = document.querySelector('[data-composer-card]');
