@@ -74,6 +74,21 @@ caixa, e o **×** (ou Esc) volta para a lupa. Uma versão anterior
 registrava um slot `conversation.session.header.views.trailing` dentro do cabeçalho e foi
 revertida — o widget fora do React não pode derrubar o cabeçalho da conversa.
 
+## Raciocínio (reasoning effort)
+
+O menu vem dos níveis que o **provedor** declara por modelo. O perfil agora declara
+`reasoningEfforts` explicitamente, o que faz duas coisas:
+
+| Nível | Efeito no protocolo |
+|---|---|
+| `off` | `thinking: { type: "disabled" }` — desliga de verdade (o catálogo do provedor marcava `off: null`, o que suprimia o parâmetro) |
+| `low` / `high` / `max` | `thinking: { type: "enabled" }` + `reasoning_effort` |
+| (nenhum) | sem `thinking` no payload — padrão do provedor |
+
+O patch `0007` remove o "Default" do menu: sem nível configurado, o host escolhe o
+**maior nível que aquele modelo suporta** (`max` para deepseek/glm, `xhigh` para o muse-spark,
+que não tem `max`).
+
 ## Como usar
 
 Depois de instalar ou atualizar o DSH (o `npm i` sobrescreve patches e apaga o addon):
