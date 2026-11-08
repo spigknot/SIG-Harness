@@ -3,241 +3,211 @@ window.__ModuleLoader__.load({
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
-    let react = require("react");
-    let jsx = require("react/jsx-runtime");
 
-    const MARK_ATTR = "data-sig-find";
-    const UI_ATTR = "data-sig-find-ui";
-    const HIT = "sig-find-hit";
-    const ACTIVE = "sig-find-active";
-    const EVENT = "sig-find-run";
+    var MARK = "data-sig-find";
+    var UI_ATTR = "data-sig-find-ui";
+    var EVENT = "sig-find-run";
+    var hits = [];
+    var current = -1;
+    var input = null;
+    var counter = null;
+    var box = null;
+    var toggle = null;
+    var expanded = false;
 
-    const COLORS = {
-      text: "var(--dsw-alias-label-primary, #f2f2f2)",
-      faint: "var(--dsw-alias-label-tertiary, #8b8f98)",
-      bg: "var(--dsw-alias-bg-elevated, #1b1c1f)",
-      border: "var(--dsw-alias-border-l3, #2c2e33)"
-    };
-
-    /** The conversation pane: nearest ancestor of the View tabs that looks like a module root. */
-    function findScope() {
-      let el = document.querySelector("[data-conversation-tabs]");
+    function scope() {
+      var tabs = document.querySelector("[data-conversation-tabs]");
+      var el = tabs;
       while (el !== null && el !== document.body) {
-        const cls = typeof el.className === "string" ? el.className : "";
+        var cls = typeof el.className === "string" ? el.className : "";
         if (cls.indexOf("_root") !== -1) return el;
         el = el.parentElement;
       }
       return document.body;
     }
 
-    function clearMarks(scope) {
-      const marks = scope.querySelectorAll("mark[" + MARK_ATTR + "]");
-      for (let i = 0; i < marks.length; i += 1) {
-        const mark = marks[i];
-        const parent = mark.parentNode;
+    function clearMarks() {
+      var marks = document.querySelectorAll("mark[" + MARK + "]");
+      for (var i = 0; i < marks.length; i += 1) {
+        var mark = marks[i];
+        var parent = mark.parentNode;
         if (parent === null) continue;
         while (mark.firstChild !== null) parent.insertBefore(mark.firstChild, mark);
         parent.removeChild(mark);
         parent.normalize();
       }
+      hits = [];
+      current = -1;
     }
 
-    function collectTextNodes(scope) {
-      const out = [];
-      const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
-        acceptNode(node) {
-          const value = node.nodeValue;
-          if (value === null || value.trim() === "") return NodeFilter.FILTER_REJECT;
-          const parent = node.parentElement;
-          if (parent === null) return NodeFilter.FILTER_REJECT;
-          const tag = parent.tagName;
-          if (tag === "SCRIPT" || tag === "STYLE" || tag === "MARK" || tag === "TEXTAREA" || tag === "INPUT") return NodeFilter.FILTER_REJECT;
-          if (parent.closest("[" + UI_ATTR + "]") !== null) return NodeFilter.FILTER_REJECT;
-          if (parent.closest("[class*='_header']") !== null) return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_ACCEPT;
-        }
-      });
-      let node = walker.nextNode();
-      while (node !== null) {
-        out.push(node);
-        node = walker.nextNode();
+    function collect(node, out) {
+      if (node.nodeType === 3) {
+        var value = node.nodeValue;
+        if (value !== null && value.trim() !== "") out.push(node);
+        return;
       }
-      return out;
+      if (node.nodeType !== 1) return;
+      var tag = node.tagName;
+      if (tag === "SCRIPT" || tag === "STYLE" || tag === "MARK" || tag === "INPUT" || tag === "TEXTAREA") return;
+      if (node.hasAttribute(UI_ATTR)) return;
+      var cls = typeof node.className === "string" ? node.className : "";
+      if (cls.indexOf("_header") !== -1) return;
+      if (node.id === "sig-find-root") return;
+      var children = node.childNodes;
+      for (var i = 0; i < children.length; i += 1) collect(children[i], out);
     }
 
-    function highlight(scope, needle) {
-      const lower = needle.toLowerCase();
-      const marks = [];
-      const nodes = collectTextNodes(scope);
-      for (let n = 0; n < nodes.length; n += 1) {
-        const node = nodes[n];
-        const text = node.nodeValue;
-        if (text === null) continue;
-        const hay = text.toLowerCase();
-        let at = hay.indexOf(lower);
+    function highlight(root, needle) {
+      var lower = needle.toLowerCase();
+      var nodes = [];
+      collect(root, nodes);
+      for (var n = 0; n < nodes.length; n += 1) {
+        var node = nodes[n];
+        var text = node.nodeValue;
+        var hay = text.toLowerCase();
+        var at = hay.indexOf(lower);
         if (at === -1) continue;
-        const frag = document.createDocumentFragment();
-        let cursor = 0;
+        var frag = document.createDocumentFragment();
+        var cursor = 0;
         while (at !== -1) {
           if (at > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, at)));
-          const mark = document.createElement("mark");
-          mark.setAttribute(MARK_ATTR, "1");
-          mark.className = HIT;
+          var mark = document.createElement("mark");
+          mark.setAttribute(MARK, "1");
+          mark.style.background = "#f5c45155";
+          mark.style.color = "inherit";
+          mark.style.borderRadius = "2px";
           mark.textContent = text.slice(at, at + lower.length);
           frag.appendChild(mark);
-          marks.push(mark);
+          hits.push(mark);
           cursor = at + lower.length;
           at = hay.indexOf(lower, cursor);
         }
         if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
         node.parentNode.replaceChild(frag, node);
       }
-      return marks;
     }
 
-    function ensureStyle() {
-      if (document.getElementById("sig-find-style") !== null) return;
-      const style = document.createElement("style");
-      style.id = "sig-find-style";
-      style.textContent =
-        "mark." + HIT + "{background:#f5c45133;color:inherit;border-radius:2px;padding:0 1px;outline:1px solid #f5c45155}" +
-        "mark." + HIT + "." + ACTIVE + "{background:#f5c451aa;color:#111;outline:1px solid #f5c451}";
-      document.head.appendChild(style);
+    function show(index) {
+      if (hits.length === 0) return;
+      if (current >= 0 && current < hits.length) {
+        hits[current].style.background = "#f5c45155";
+        hits[current].style.color = "inherit";
+      }
+      current = ((index % hits.length) + hits.length) % hits.length;
+      var mark = hits[current];
+      mark.style.background = "#f5c451aa";
+      mark.style.color = "#111";
+      mark.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (counter !== null) counter.textContent = (current + 1) + "/" + hits.length;
     }
 
-    /** Set by the mounted widget so the sidebar hook can drive it. */
-    let controller = null;
+    function run(query, jump, attempts) {
+      var needle = (query || "").trim();
+      clearMarks();
+      if (counter !== null) counter.textContent = needle === "" ? "" : "0";
+      if (needle === "") return;
+      highlight(scope(), needle);
+      if (counter !== null) counter.textContent = hits.length === 0 ? "0" : "1/" + hits.length;
+      if (hits.length === 0) {
+        if (attempts > 0) window.setTimeout(function () { run(needle, jump, attempts - 1); }, 300);
+        return;
+      }
+      show(jump === "last" ? hits.length - 1 : 0);
+    }
 
-    function installSidebarHook() {
+    function place() {
+      if (box === null) return;
+      var tabs = document.querySelector("[data-conversation-tabs]");
+      if (tabs === null) { box.style.display = "none"; return; }
+      var rect = tabs.getBoundingClientRect();
+      if (rect.width === 0) { box.style.display = "none"; return; }
+      box.style.display = "flex";
+      box.style.top = (rect.bottom + 6) + "px";
+      box.style.right = "12px";
+    }
+
+    function makeButton(label, title, onClick) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.title = title;
+      button.setAttribute(UI_ATTR, "1");
+      button.style.cssText = "border:1px solid #2c2e33;background:transparent;color:#f2f2f2;border-radius:6px;width:22px;height:22px;font-size:11px;padding:0;cursor:pointer";
+      button.addEventListener("click", onClick);
+      return button;
+    }
+
+    function build() {
+      if (document.getElementById("sig-find-root") !== null) return;
+      box = document.createElement("div");
+      box.id = "sig-find-root";
+      box.setAttribute(UI_ATTR, "1");
+      box.style.cssText = "position:fixed;display:none;align-items:center;gap:6px;z-index:2147483000;padding:4px 8px;border-radius:8px;background:#1b1c1f;border:1px solid #2c2e33;box-shadow:0 2px 10px rgba(0,0,0,.45)";
+
+      input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "Buscar nesta sessão";
+      input.setAttribute(UI_ATTR, "1");
+      input.style.cssText = "width:140px;height:22px;font-size:12px;color:#f2f2f2;background:#151517;border:1px solid #2c2e33;border-radius:6px;padding:0 8px";
+      input.addEventListener("input", function () { run(input.value, "first", 0); });
+      input.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") { event.preventDefault(); run(input.value, "last", 0); }
+        if (event.key === "Escape") { input.value = ""; run("", "first", 0); }
+      });
+
+      counter = document.createElement("span");
+      counter.setAttribute(UI_ATTR, "1");
+      counter.style.cssText = "font-size:11px;color:#8b8f98;min-width:34px;text-align:center";
+
+      box.appendChild(input);
+      box.appendChild(counter);
+      box.appendChild(makeButton("↑", "Ocorrência anterior", function () { show(current - 1); }));
+      box.appendChild(makeButton("↓", "Próxima ocorrência", function () { show(current + 1); }));
+      box.appendChild(makeButton("×", "Fechar busca", function () { box.style.display = "none"; clearMarks(); }));
+
+      toggle = makeButton("⌕", "Buscar nesta sessão", function () {
+        var hidden = box.style.display === "none";
+        place();
+        if (hidden) { box.style.display = "flex"; input.focus(); input.select(); }
+        else { box.style.display = "none"; clearMarks(); }
+      });
+      toggle.style.position = "fixed";
+      toggle.style.zIndex = "2147483000";
+      toggle.style.background = "#1b1c1f";
+
+      document.body.appendChild(box);
+      document.body.appendChild(toggle);
+
+      window.addEventListener("resize", function () { place(); });
+      document.addEventListener("scroll", function () { place(); }, true);
+      window.setInterval(place, 800);
+      place();
+    }
+
+    function hookSidebar() {
       if (window.__sigFindHooked === true) return;
       window.__sigFindHooked = true;
       document.addEventListener("click", function (event) {
-        const target = event.target;
+        var target = event.target;
         if (target === null || target instanceof Element !== true) return;
-        const tree = target.closest("[class*='searchTree']");
-        if (tree === null) return;
-        const input = document.querySelector("[class*='searchInput']");
-        const query = input !== null && typeof input.value === "string" ? input.value.trim() : "";
-        if (query === "" || controller === null) return;
-        // O resultado clicado abre a sessão; o widget reaplica a busca e salta para a última ocorrência.
-        setTimeout(function () { controller.run(query, "last", 12); }, 250);
+        if (target.closest("[class*='searchTree']") === null) return;
+        var field = document.querySelector("[class*='searchInput']");
+        var query = field !== null && typeof field.value === "string" ? field.value.trim() : "";
+        if (query === "") return;
+        window.setTimeout(function () {
+          if (input !== null) input.value = query;
+          run(query, "last", 12);
+        }, 250);
       }, true);
     }
 
-    function FindBox() {
-      const [query, setQuery] = react.useState("");
-      const [total, setTotal] = react.useState(0);
-      const [index, setIndex] = react.useState(-1);
-      const marks = react.useRef([]);
-      const retry = react.useRef(0);
-      const timer = react.useRef(null);
-
-      const focusMark = react.useCallback(function (next) {
-        const list = marks.current;
-        if (list.length === 0) return;
-        const clamped = ((next % list.length) + list.length) % list.length;
-        for (let i = 0; i < list.length; i += 1) list[i].classList.remove(ACTIVE);
-        const mark = list[clamped];
-        mark.classList.add(ACTIVE);
-        mark.scrollIntoView({ block: "center", behavior: "smooth" });
-        setIndex(clamped);
-      }, []);
-
-      const run = react.useCallback(function (value, jump, attempts) {
-        ensureStyle();
-        const scope = findScope();
-        clearMarks(scope);
-        if (value === "") {
-          marks.current = [];
-          setTotal(0);
-          setIndex(-1);
-          return;
-        }
-        const hits = highlight(scope, value);
-        marks.current = hits;
-        setTotal(hits.length);
-        if (hits.length === 0) {
-          setIndex(-1);
-          if (attempts !== undefined && attempts > 0) {
-            window.clearTimeout(timer.current);
-            timer.current = window.setTimeout(function () { controller.run(value, jump, attempts - 1); }, 300);
-          }
-          return;
-        }
-        focusMark(jump === "last" ? hits.length - 1 : 0);
-      }, [focusMark]);
-
-      react.useEffect(function () {
-        controller = { run: run };
-        return function () { controller = null; if (timer.current !== null) window.clearTimeout(timer.current); };
-      }, [run]);
-
-      react.useEffect(function () {
-        function onRun(event) {
-          const detail = event.detail || {};
-          if (typeof detail.query !== "string") return;
-          setQuery(detail.query);
-          run(detail.query, detail.jump === "last" ? "last" : "first", detail.jump === "last" ? 12 : 0);
-        }
-        window.addEventListener(EVENT, onRun);
-        return function () { window.removeEventListener(EVENT, onRun); };
-      }, [run]);
-
-      function onSubmit(event) {
-        event.preventDefault();
-        run(query, "last", 0);
-      }
-
-      const counter = total === 0 ? (query === "" ? "" : "0") : (index + 1) + "/" + total;
-      const buttonStyle = {
-        border: "1px solid " + COLORS.border, background: "transparent", color: COLORS.text,
-        borderRadius: "6px", width: "22px", height: "22px", lineHeight: "18px", fontSize: "11px",
-        cursor: "pointer", padding: 0
-      };
-
-      return jsx.jsxs("form", {
-        "data-sig-find-ui": "1",
-        onSubmit: onSubmit,
-        style: { display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto", paddingBottom: "9px" },
-        children: [
-          jsx.jsx("input", {
-            type: "text",
-            value: query,
-            placeholder: "Buscar nesta sessão",
-            onChange: function (event) { setQuery(event.target.value); run(event.target.value, "first", 0); },
-            onKeyDown: function (event) {
-              if (event.key === "Enter") { event.preventDefault(); run(query, "last", 0); }
-              if (event.key === "Escape") { setQuery(""); run("", "first", 0); }
-            },
-            style: {
-              width: "150px", height: "22px", fontSize: "12px", color: COLORS.text,
-              background: COLORS.bg, border: "1px solid " + COLORS.border, borderRadius: "6px", padding: "0 8px"
-            }
-          }),
-          jsx.jsx("span", { style: { fontSize: "11px", color: COLORS.faint, minWidth: "34px", textAlign: "center" }, children: counter }),
-          jsx.jsx("button", { type: "button", title: "Ocorrência anterior", style: buttonStyle, onClick: function () { focusMark(index - 1); }, children: "↑" }),
-          jsx.jsx("button", { type: "button", title: "Próxima ocorrência", style: buttonStyle, onClick: function () { focusMark(index + 1); }, children: "↓" })
-        ]
-      });
-    }
-
-    const inject = ["slots"];
-
-    function apply(ctx) {
-      ensureStyle();
-      installSidebarHook();
-      ctx.slots.inject("conversation.session.header.views.trailing", function () {
-        return ctx.slots.register({
-          name: "conversation.session.header.views.trailing",
-          id: "sig-find",
-          order: 80,
-          label: function () { return "Buscar"; }
-        }, FindBox);
-      });
+    function apply() {
+      build();
+      hookSidebar();
     }
 
     exports.apply = apply;
-    exports.inject = inject;
+    exports.inject = [];
     return module.exports;
   }
 });

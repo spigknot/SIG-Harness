@@ -53,6 +53,26 @@ O modo `--auto` nunca falha e é idempotente: aplica só o que falta, pula os pa
 versão do DSH não é a fixada em `pin.env` (com aviso no `provision.log`) e só **adiciona** a
 entrada do plugin no `cordis.patch.yml`, sem sobrescrever a configuração existente.
 
+## Busca
+
+Duas superfícies, dois custos:
+
+| Onde | Disparo | O que faz |
+|---|---|---|
+| Barra lateral | a cada tecla | filtra por **título**, em memória |
+| Barra lateral | **Enter** | busca no **conteúdo** via FTS5 do DSH (`session-query-sqlite`), com skeleton de carregamento e snippets |
+| Dentro da sessão | a cada tecla | caixa flutuante com destaque, contador e ↑/↓ entre ocorrências |
+
+O índice é o do próprio DSH, aberto na primeira busca (`openAt: first-search`) e guardado em
+`~/.dsh/session-search.db` — arquivo derivado, pode ser apagado a qualquer momento. Medição
+com o histórico atual (7 sessões, 5,8M caracteres): **0,8 s** de construção, **131 MB** de pico
+de RSS, **7,8 MB** de índice.
+
+A caixa dentro da sessão é `plugin/dsh-web-sig-find`, escrita em **DOM puro**: ela se posiciona
+como sobreposição abaixo da linha das abas e não participa da árvore React. Uma versão anterior
+registrava um slot `conversation.session.header.views.trailing` dentro do cabeçalho e foi
+revertida — o widget fora do React não pode derrubar o cabeçalho da conversa.
+
 ## Como usar
 
 Depois de instalar ou atualizar o DSH (o `npm i` sobrescreve patches e apaga o addon):

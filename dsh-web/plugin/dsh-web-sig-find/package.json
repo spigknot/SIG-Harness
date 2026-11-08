@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-sig-find",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -11,10 +11,7 @@
   },
   "dsh": {
     "client": {
-      "platform": "web",
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-conversation"
-      ]
+      "platform": "web"
     }
   }
 }

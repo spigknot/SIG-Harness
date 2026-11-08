@@ -44,14 +44,14 @@ done
 
 PATCH_SETS=(
   "0001-attachment-local-android-durability.patch|dsh-attachment-local/lib/index.js"
-  "0002-conversation-error-detail-and-views-slot.patch|dsh-client-ui-conversation/lib/client.js"
+  "0002-conversation-error-detail.patch|dsh-client-ui-conversation/lib/client.js"
   "0003-directory-picker-start-directory.patch|dsh-host-directory-picker-browse/lib/index.js dsh-host-directory-picker-browse/README.md dsh-host-directory-picker-auto/lib/index.js dsh-host-directory-picker-auto/README.md"
   "0004-node-addon-flock-android-ffi.patch|node-addon-system/lib/flock.js"
   "0005-session-persistence-link-fallback.patch|dsh-session-persistence-jsonl/lib/index.js"
   "0006-workspace-enter-content-search.patch|dsh-client-ui-workspace/lib/client.js"
 )
 
-rm -f "$HERE"/patches/0002-conversation-error-detail.patch "$HERE"/patches/0006-conversation-views-trailing-slot.patch "$HERE"/patches/0007-workspace-enter-content-search.patch
+rm -f "$HERE"/patches/0002-conversation-error-detail-and-views-slot.patch "$HERE"/patches/0006-conversation-views-trailing-slot.patch "$HERE"/patches/0007-workspace-enter-content-search.patch
 
 for set in "${PATCH_SETS[@]}"; do
   out="${set%%|*}"
