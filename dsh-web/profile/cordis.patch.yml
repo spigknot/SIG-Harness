@@ -81,3 +81,11 @@
   config:
     path: /data/data/com.termux/files/home/.dsh/session-search.db
     openAt: first-search
+
+# Fora do ar: o provedor DeepSeek criado pelo login (duplicava o manual) e a
+# superfície de conta — entrada de login na barra lateral e seção "Account".
+# O provedor manual (deepseek-official, via API key) continua disponível.
+- id: llm-deepseek-account
+  disabled: true
+- id: ui-settings-account
+  disabled: true
