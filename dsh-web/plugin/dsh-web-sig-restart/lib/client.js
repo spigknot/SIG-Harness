@@ -8,6 +8,7 @@ window.__ModuleLoader__.load({
 
     var ICON = "M4 4v6h6M20 20v-6h-6M19.5 9a7.5 7.5 0 0 0-13-3.5L4 8M4.5 15a7.5 7.5 0 0 0 13 3.5L20 16";
 
+    /** Botão compacto do rodapé: convive com a engrenagem, não ocupa o lugar dela. */
     function RestartButton() {
       const [busy, setBusy] = react.useState(false);
 
@@ -19,39 +20,35 @@ window.__ModuleLoader__.load({
           window.SigApp.restartHarness();
           return;
         }
-        // Sem o gancho nativo (navegador puro), recarregar a página é o mais próximo.
         window.location.reload();
       }
 
-      return jsx.jsxs("button", {
+      return jsx.jsx("button", {
         type: "button",
         onClick: activate,
-        title: "Reiniciar o harness: encerra o dsh web e sobe um processo novo",
-        "aria-label": "Reiniciar o harness",
+        title: busy ? "Reiniciando o harness…" : "Reiniciar harness",
+        "aria-label": "Reiniciar harness",
         style: {
-          display: "flex", alignItems: "center", gap: "8px", width: "100%",
-          border: 0, background: "transparent", color: "var(--dsw-alias-label-secondary, #b9bcc4)",
-          fontSize: "13px", padding: "6px 10px", borderRadius: "8px", cursor: "pointer",
-          textAlign: "left", opacity: busy ? "0.6" : "1"
+          width: "28px", height: "28px", borderRadius: "999px", border: "none",
+          background: "transparent", color: "var(--dsw-alias-label-tertiary, #8b8f98)",
+          display: "grid", placeItems: "center", padding: 0, cursor: busy ? "default" : "pointer",
+          opacity: busy ? "0.5" : "1", flex: "none"
         },
-        children: [
-          jsx.jsx("svg", {
-            width: "15", height: "15", viewBox: "0 0 24 24", fill: "none",
-            stroke: "currentColor", "stroke-width": "1.8", "stroke-linecap": "round",
-            "stroke-linejoin": "round", "aria-hidden": "true",
-            children: jsx.jsx("path", { d: ICON })
-          }),
-          jsx.jsx("span", { children: busy ? "Reiniciando…" : "Reiniciar harness" })
-        ]
+        children: jsx.jsx("svg", {
+          width: "15", height: "15", viewBox: "0 0 24 24", fill: "none",
+          stroke: "currentColor", "stroke-width": "1.8", "stroke-linecap": "round",
+          "stroke-linejoin": "round", "aria-hidden": "true",
+          children: jsx.jsx("path", { d: ICON })
+        })
       });
     }
 
     const inject = ["slots"];
 
     function apply(ctx) {
-      ctx.slots.inject("settings.launcher", function () {
+      ctx.slots.inject("sidebar.footer.action", function () {
         return ctx.slots.register({
-          name: "settings.launcher",
+          name: "sidebar.footer.action",
           id: "sig-restart",
           order: 50,
           label: function () { return "Reiniciar harness"; }
