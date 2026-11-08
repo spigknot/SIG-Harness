@@ -129,19 +129,37 @@ window.__ModuleLoader__.load({
      * curta; depois de uma mensagem longa ela volta para a base das abas, em vez de
      * descer pela conversa.
      */
+    /** Altura da faixa visível no ponto (x, y): ignora contêineres altos e os próprios widgets. */
+    function rowBottomAt(x, y) {
+      var stack = [];
+      try { stack = document.elementsFromPoint(x, y) || []; } catch (e) { return null; }
+      for (var i = 0; i < stack.length; i += 1) {
+        var el = stack[i];
+        if (el === launcher || el === box) continue;
+        if (typeof el.closest === "function" && el.closest("[" + UI_ATTR + "]") !== null) continue;
+        var rect = el.getBoundingClientRect();
+        if (rect.height <= 0 || rect.height > 240) continue;
+        if (rect.bottom <= y - 2) continue;
+        return rect.bottom;
+      }
+      return null;
+    }
+
+    /**
+     * A lupa fica logo ABAIXO da faixa que ocupa aquele ponto (anexo, arquivo
+     * entregue, barra de ações), para não cobrir os botões dela. O que estiver ali
+     * é medido pelo próprio ponto, não por seletores: a marcação do DSH muda.
+     */
     function anchorBottom(tabs, rect) {
       var base = rect.bottom + 6;
-      var header = tabs.closest("[class*='_header']");
-      var body = header === null ? null : header.nextElementSibling;
-      if (body === null) return base;
-      var row = body.firstElementChild;
-      if (row === null) return base;
-      var box = row.getBoundingClientRect();
-      if (box.height <= 0) return base;
-      var bottom = box.bottom + 8;
-      if (bottom <= base) return base;
-      if (bottom > base + 140) return base;
-      return bottom;
+      var x = Math.max(20, window.innerWidth - 30);
+      var y = base + 4;
+      var bottom = rowBottomAt(x, y);
+      if (bottom === null) return base;
+      var target = bottom + 8;
+      if (target <= base) return base;
+      if (target > base + 200) return base;
+      return target;
     }
 
     function place() {
@@ -236,6 +254,10 @@ window.__ModuleLoader__.load({
 
       document.body.appendChild(box);
       document.body.appendChild(launcher);
+
+      launcher.style.transition = "opacity .18s ease";
+      launcher.style.opacity = "0.15";
+      window.setTimeout(function () { launcher.style.opacity = "1"; }, 60);
 
       window.addEventListener("resize", place);
       document.addEventListener("scroll", place, true);
