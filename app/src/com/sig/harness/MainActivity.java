@@ -498,6 +498,17 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
 
     private void startHarnessFlow() {
         if (startFlow) return;
+        // APK novo = pacote dsh-web novo: provisiona e reinicia o host antes de tudo,
+        // senão a interface continua servindo os módulos da versão anterior.
+        String payload = assetBase64OrEmpty("dsh-web.tgz");
+        String hash = payloadHash(payload);
+        if (!hash.isEmpty() && !hash.equals(prefs.appliedPayload()) && TermuxRunner.isTermuxInstalled(this) && TermuxRunner.hasPermission(this)) {
+            prefs.setAppliedPayload(hash);
+            startFlow = true;
+            doRestartHarness();
+            startFlow = false;
+            return;
+        }
         if (bridge != null) {
             doStartWeb();
             return;
@@ -664,6 +675,20 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     }
 
     /** Mata o dsh web em execução, reenvia o comando ao Termux e recarrega a interface. */
+    /** SHA-256 do base64 do pacote embutido — muda a cada build que altere dsh-web/. */
+    private String payloadHash(String payload) {
+        if (payload == null || payload.isEmpty()) return "";
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(payload.getBytes("UTF-8"));
+            StringBuilder out = new StringBuilder(bytes.length * 2);
+            for (byte b : bytes) out.append(String.format("%02x", b));
+            return out.toString();
+        } catch (Throwable error) {
+            return "";
+        }
+    }
+
     private void doRestartHarness() {
         restartingWeb = true;
         polling = false;
