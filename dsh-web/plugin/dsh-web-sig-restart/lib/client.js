@@ -68,10 +68,35 @@ window.__ModuleLoader__.load({
       document.head.appendChild(style);
     }
 
+    /** Envia o estado real do rodapé para o host, para conferir os seletores. */
+    function sendDiagnostics() {
+      try {
+        var rows = [];
+        var nodes = document.querySelectorAll("[class*=\"footerActions\"], [class*=\"footArea\"], [class*=\"triggerRow\"], [data-mobile-nav]");
+        for (var i = 0; i < nodes.length && i < 12; i += 1) {
+          var el = nodes[i];
+          rows.push({
+            cls: String(el.className || ""),
+            nav: el.getAttribute ? el.getAttribute("data-mobile-nav") : null,
+            html: (el.outerHTML || "").slice(0, 320)
+          });
+        }
+        var style = document.getElementById("sig-footer-style");
+        var payload = JSON.stringify({
+          href: String(window.location.href).slice(0, 120),
+          styleInjected: style !== null,
+          styleText: style === null ? "" : String(style.textContent).slice(0, 400),
+          nodes: rows
+        });
+        fetch("/api/sig/diag", { method: "POST", headers: { "content-type": "application/json" }, body: payload }).catch(function () {});
+      } catch (error) { /* diagnóstico é opcional */ }
+    }
+
     const inject = ["slots"];
 
     function apply(ctx) {
       installFooterStyle();
+      window.setTimeout(sendDiagnostics, 2500);
       ctx.slots.inject("sidebar.footer.action", function () {
         return ctx.slots.register({
           name: "sidebar.footer.action",
