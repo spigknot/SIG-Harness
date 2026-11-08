@@ -70,3 +70,15 @@
 - insert:
     - id: dsh-web-sig-voice
       name: 'dsh-web-sig-voice'
+
+# Busca full-text no histórico: índice FTS5 do próprio DSH, aberto na primeira
+# busca (openAt: first-search) para não pesar o boot.
+- id: session-query-sqlite
+  config:
+    path: /data/data/com.termux/files/home/.dsh/session-search.db
+    openAt: first-search
+
+# Caixa de busca dentro da sessão (destaque + anterior/próxima).
+- insert:
+    - id: dsh-web-sig-find
+      name: 'dsh-web-sig-find'

@@ -1,0 +1,53 @@
+--- a/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
++++ b/node_modules/@deepseek-ai/dsh-client-ui-workspace/lib/client.js
+@@ -3651,6 +3651,7 @@
+ 			const [searchExpanded, setSearchExpanded] = (0, react.useState)(false);
+ 			const [revealSessionId, setRevealSessionId] = (0, react.useState)(void 0);
+ 			const normalizedQuery = sanitizeSearchQuery(query).trim();
++			const [searchCommit, setSearchCommit] = (0, react.useState)(false);
+ 			const [remoteSearch, setRemoteSearch] = (0, react.useState)({
+ 				query: "",
+ 				status: "idle",
+@@ -3735,6 +3736,15 @@
+ 					});
+ 					return;
+ 				}
++				if (!searchCommit) {
++					setRemoteSearch({
++						query: "",
++						status: "idle",
++						items: [],
++						hasMore: false
++					});
++					return;
++				}
+ 				const controller = new AbortController();
+ 				setRemoteSearch({
+ 					query: normalizedQuery,
+@@ -3765,7 +3775,7 @@
+ 					window.clearTimeout(timer);
+ 					controller.abort();
+ 				};
+-			}, [normalizedQuery, searchSessions]);
++			}, [normalizedQuery, searchSessions, searchCommit]);
+ 			const [renameTarget, setRenameTarget] = (0, react.useState)(null);
+ 			const [renameDraft, setRenameDraft] = (0, react.useState)("");
+ 			const [renaming, setRenaming] = (0, react.useState)(false);
+@@ -3872,10 +3882,17 @@
+ 											tabIndex: searchExpanded ? 0 : -1,
+ 											onChange: (e) => {
+ 												setQuery(sanitizeSearchQuery(e.target.value));
++												setSearchCommit(false);
+ 											},
+ 											onKeyDown: (e) => {
++												if (e.key === "Enter") {
++													e.preventDefault();
++													setSearchCommit(true);
++													return;
++												}
+ 												if (e.key !== "Escape") return;
+ 												setQuery("");
++												setSearchCommit(false);
+ 												setSearchExpanded(false);
+ 											}
+ 										}),

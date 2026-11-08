@@ -69,16 +69,21 @@ if [ "$SKIP_PATCHES" = 0 ]; then
   done
 fi
 
-PLUGIN=dsh-web-sig-voice
 if [ ! -d "$PROFILE" ]; then
-  echo "profile ausente  $PROFILE (plugin e config não instalados)"
-elif [ "$DRY" = 1 ]; then
-  echo "copiaria      plugin $PLUGIN para $PROFILE/node_modules/"
+  echo "profile ausente  $PROFILE (plugins e config não instalados)"
 else
-  mkdir -p "$PROFILE/node_modules"
-  rm -rf "${PROFILE:?}/node_modules/$PLUGIN"
-  cp -R "$HERE/plugin/$PLUGIN" "$PROFILE/node_modules/$PLUGIN"
-  echo "plugin ok     $PLUGIN"
+  for src in "$HERE"/plugin/*/; do
+    [ -d "$src" ] || continue
+    PLUGIN="$(basename "$src")"
+    if [ "$DRY" = 1 ]; then
+      echo "copiaria      plugin $PLUGIN para $PROFILE/node_modules/"
+      continue
+    fi
+    mkdir -p "$PROFILE/node_modules"
+    rm -rf "${PROFILE:?}/node_modules/$PLUGIN"
+    cp -R "$src" "$PROFILE/node_modules/$PLUGIN"
+    echo "plugin ok     $PLUGIN"
+  done
 fi
 
 ARTIFACT_SRC="$HERE/artifacts/require_builtin-napi-v9-android-arm64.node"
@@ -101,24 +106,49 @@ fi
 ensure_plugin_entry() {
   local cfg="$PROFILE/cordis.patch.yml"
   [ -d "$PROFILE" ] || return 0
-  if [ -f "$cfg" ] && grep -q 'dsh-web-sig-voice' "$cfg"; then
-    echo "profile ok    plugin já registrado em cordis.patch.yml"
+  local need=""
+  for p in dsh-web-sig-voice dsh-web-sig-find; do
+    grep -q "$p" "$cfg" 2>/dev/null || need="$need $p"
+  done
+  if [ -z "$need" ]; then
+    echo "profile ok    plugins já registrados em cordis.patch.yml"
     return 0
   fi
   if [ "$DRY" = 1 ]; then
-    echo "registraria   plugin em cordis.patch.yml"
+    echo "registraria   plugins:$need"
     return 0
   fi
-  # Arquivo ausente, vazio ou apenas "[]" (lista vazia) recebe a entrada do zero;
-  # um arquivo com outras entradas aceita o item novo no fim da lista.
+  # Arquivo ausente, vazio ou apenas "[]" (lista vazia) recomeça a lista;
+  # um arquivo com outras entradas aceita os itens novos no fim.
   local stripped
   stripped="$(sed -e 's/#.*$//' "$cfg" 2>/dev/null | tr -d '[:space:]')"
   if [ ! -f "$cfg" ] || [ -z "$stripped" ] || [ "$stripped" = "[]" ]; then
-    printf -- "- insert:\n    - id: dsh-web-sig-voice\n      name: 'dsh-web-sig-voice'\n" > "$cfg"
-  else
-    printf "\n# Aba \"Voz\" nas Configurações do DSH (plugin local).\n- insert:\n    - id: dsh-web-sig-voice\n      name: 'dsh-web-sig-voice'\n" >> "$cfg"
+    : > "$cfg"
   fi
-  echo "profile ok    plugin registrado em cordis.patch.yml"
+  for p in $need; do
+    printf "\n# Plugin local do SIG Harness.\n- insert:\n    - id: %s\n      name: '%s'\n" "$p" "$p" >> "$cfg"
+  done
+  echo "profile ok    plugins registrados:$need"
+}
+
+ensure_index_entry() {
+  local cfg="$PROFILE/cordis.patch.yml"
+  [ -d "$PROFILE" ] || return 0
+  if grep -q 'session-query-sqlite' "$cfg" 2>/dev/null; then
+    echo "profile ok    índice de busca já habilitado"
+    return 0
+  fi
+  if [ "$DRY" = 1 ]; then
+    echo "habilitaria   índice FTS5 em $cfg"
+    return 0
+  fi
+  local stripped
+  stripped="$(sed -e 's/#.*$//' "$cfg" 2>/dev/null | tr -d '[:space:]')"
+  if [ ! -f "$cfg" ] || [ -z "$stripped" ] || [ "$stripped" = "[]" ]; then
+    : > "$cfg"
+  fi
+  printf "\n# Busca full-text no histórico (FTS5 do DSH), aberto na primeira busca.\n- id: session-query-sqlite\n  config:\n    path: %s\n    openAt: first-search\n" "$HOME/.dsh/session-search.db" >> "$cfg"
+  echo "profile ok    índice de busca habilitado"
 }
 
 if [ "$WITH_PROFILE" = 1 ]; then
@@ -136,6 +166,7 @@ if [ "$WITH_PROFILE" = 1 ]; then
   done
 elif [ "$AUTO" = 1 ]; then
   ensure_plugin_entry
+  ensure_index_entry
 fi
 
 echo
