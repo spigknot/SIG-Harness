@@ -140,7 +140,22 @@ public final class StartScreen {
         errorDetail.setLineSpacing(Ui.dp(c, 3), 1.0f);
         LinearLayout.LayoutParams edlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         edlp.topMargin = Ui.dp(c, 5);
+        errorDetail.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override public boolean onLongClick(View v) {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                        c.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("SIG Harness", errorDetail.getText()));
+                    android.widget.Toast.makeText(c, "Erro copiado", android.widget.Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            }
+        });
         errorBox.addView(errorDetail, edlp);
+
+        TextView copyHint = Ui.text(c, "segure o texto acima para copiar", 10.5f, Ui.FAINT, Ui.REGULAR);
+        copyHint.setPadding(0, Ui.dp(c, 4), 0, 0);
+        errorBox.addView(copyHint);
         errorRetry = Ui.text(c, "Tentar novamente", 13f, Ui.RED, Ui.MEDIUM);
         errorRetry.setPadding(0, Ui.dp(c, 10), 0, 0);
         errorRetry.setClickable(true);
