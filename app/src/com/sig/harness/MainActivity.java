@@ -92,9 +92,28 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private final List<JSONObject> permissionQueue = new ArrayList<>();
 
     /** Revalida o Termux ao voltar do navegador: instalar por fora não deve exigir reabrir o app. */
+    private boolean resumed;
+    private int foregroundTries;
+
+    /** Roda a ação só com a activity em primeiro plano (Android 12+ barra serviço em background). */
+    private void whenForeground(final Runnable action) {
+        if (resumed) { action.run(); return; }
+        if (foregroundTries++ > 20) { foregroundTries = 0; return; }
+        ui.postDelayed(new Runnable() {
+            @Override public void run() { whenForeground(action); }
+        }, 250);
+    }
+
     @Override protected void onResume() {
+        resumed = true;
+        foregroundTries = 0;
         super.onResume();
         if (startScreen != null) startScreen.setTermuxInstalled(TermuxRunner.isTermuxInstalled(this));
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        resumed = false;
     }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -571,7 +590,9 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         startScreen.setStatus("Iniciando o harness…", Ui.TEXT_SOFT);
         startScreen.setStep(0, 1, "enviando comando ao Termux");
         try {
-            TermuxRunner.startBridge(this, prefs.token(), prefs.cwd(), prefs.basePort(), assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), assetBase64OrEmpty("dsh-web.tgz"));
+            whenForeground(new Runnable() { @Override public void run() {
+            TermuxRunner.startBridge(MainActivity.this, prefs.token(), prefs.cwd(), prefs.basePort(), assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), assetBase64OrEmpty("dsh-web.tgz"));
+            } });
         } catch (SecurityException se) {
             failStart("Permissão do Termux negada", "Conceda a permissão \"Executar comandos no Termux\" nos Ajustes do app e tente de novo.");
             return;
@@ -736,8 +757,10 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         runtimeWasReady = false;
         if (webScreen != null) webScreen.setWaiting(true, "Reiniciando o harness…");
         try {
-            TermuxRunner.restartBridge(this, prefs.token(), prefs.cwd(), prefs.basePort(),
+            whenForeground(new Runnable() { @Override public void run() {
+            TermuxRunner.restartBridge(MainActivity.this, prefs.token(), prefs.cwd(), prefs.basePort(),
                     assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), assetBase64OrEmpty("dsh-web.tgz"));
+            } });
         } catch (Throwable error) {
             restartingWeb = false;
             toast("Não foi possível reiniciar: " + error);
