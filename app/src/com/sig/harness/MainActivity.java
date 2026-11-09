@@ -96,6 +96,37 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private int foregroundTries;
 
     /** Roda a ação só com a activity em primeiro plano (Android 12+ barra serviço em background). */
+    private int termuxAttempts;
+
+    /**
+     * Envia o comando ao Termux com as duas proteções: a activity precisa estar em foco e,
+     * se o Android recusar por background, tenta de novo em vez de falhar na hora.
+     */
+    private void dispatchTermuxCommand(final boolean restart) {
+        if (!resumed || !hasWindowFocus()) {
+            if (termuxAttempts++ > 20) { termuxAttempts = 0; failStart("Não foi possível falar com o Termux", "A tela precisa estar em primeiro plano para enviar o comando."); return; }
+            ui.postDelayed(new Runnable() { @Override public void run() { dispatchTermuxCommand(restart); } }, 300);
+            return;
+        }
+        try {
+            if (restart) {
+                TermuxRunner.restartBridge(this, prefs.token(), prefs.cwd(), prefs.basePort(),
+                        assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), assetBase64OrEmpty("dsh-web.tgz"));
+            } else {
+                TermuxRunner.startBridge(this, prefs.token(), prefs.cwd(), prefs.basePort(),
+                        assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), assetBase64OrEmpty("dsh-web.tgz"));
+            }
+            termuxAttempts = 0;
+        } catch (Throwable error) {
+            String name = error.getClass().getName();
+            if (name.contains("BackgroundServiceStartNotAllowed") && termuxAttempts++ < 10) {
+                ui.postDelayed(new Runnable() { @Override public void run() { dispatchTermuxCommand(restart); } }, 600);
+                return;
+            }
+            termuxAttempts = 0;
+            failStart("Não foi possível falar com o Termux", String.valueOf(error));
+        }
+    }
     private void whenForeground(final Runnable action) {
         if (resumed) { action.run(); return; }
         if (foregroundTries++ > 20) { foregroundTries = 0; return; }
@@ -589,17 +620,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         startScreen.hideError();
         startScreen.setStatus("Iniciando o harness…", Ui.TEXT_SOFT);
         startScreen.setStep(0, 1, "enviando comando ao Termux");
-        try {
-            whenForeground(new Runnable() { @Override public void run() {
-            TermuxRunner.startBridge(MainActivity.this, prefs.token(), prefs.cwd(), prefs.basePort(), assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), assetBase64OrEmpty("dsh-web.tgz"));
-            } });
-        } catch (SecurityException se) {
-            failStart("Permissão do Termux negada", "Conceda a permissão \"Executar comandos no Termux\" nos Ajustes do app e tente de novo.");
-            return;
-        } catch (Throwable t) {
-            failStart("Não foi possível falar com o Termux", String.valueOf(t));
-            return;
-        }
+        dispatchTermuxCommand(false);
         startScreen.setStep(0, 2, "comando enviado");
         startScreen.setStep(1, 1, "instalando o que faltar");
         startScreen.setStep(2, 1, "aguardando o bridge");
@@ -757,10 +778,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         runtimeWasReady = false;
         if (webScreen != null) webScreen.setWaiting(true, "Reiniciando o harness…");
         try {
-            whenForeground(new Runnable() { @Override public void run() {
-            TermuxRunner.restartBridge(MainActivity.this, prefs.token(), prefs.cwd(), prefs.basePort(),
-                    assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), assetBase64OrEmpty("dsh-web.tgz"));
-            } });
+            dispatchTermuxCommand(true);
         } catch (Throwable error) {
             restartingWeb = false;
             toast("Não foi possível reiniciar: " + error);
