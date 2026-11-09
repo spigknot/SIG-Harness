@@ -227,6 +227,24 @@ ensure_profile_baseline() {
   echo "profile ok    perfil completo aplicado"
 }
 
+
+# koffi (FFI do flock no Android): o pacote npm não traz o binário deste aparelho,
+# e sem ele todo turno falha com "Cannot find the native Koffi module".
+KOFFI_SRC="$HERE/artifacts/koffi-android-arm64.node"
+KOFFI_DST="$DSH/node_modules/koffi/build/koffi/android_arm64/koffi.node"
+if [ ! -f "$KOFFI_SRC" ]; then
+  echo "aviso: artefato do koffi ausente, o FFI do flock não será instalado" >&2
+elif [ ! -d "$DSH/node_modules/koffi" ]; then
+  echo "koffi pulado   pacote koffi não instalado"
+elif [ "$DRY" = 1 ]; then
+  echo "copiaria      koffi nativo -> node_modules/koffi/build/koffi/android_arm64/"
+elif [ -f "$KOFFI_DST" ] && cmp -s "$KOFFI_SRC" "$KOFFI_DST"; then
+  echo "koffi ok       binário nativo já no lugar"
+else
+  mkdir -p "$(dirname "$KOFFI_DST")"
+  cp "$KOFFI_SRC" "$KOFFI_DST" && echo "koffi ok       binário nativo instalado"
+fi
+
 if [ "$WITH_PROFILE" = 1 ]; then
   stamp="$(date +%Y%m%d-%H%M%S)"
   for f in cordis.patch.yml cordis.yml package.json pnpm-workspace.yaml; do
