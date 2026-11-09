@@ -49,6 +49,10 @@ bash build.sh                                # gera dist/SIG-Harness.apk
 
 Só depois: `git add -A`, commit e push. Nunca `--force`, nunca `--no-verify`.
 
+**Toda build vai para `Download/`.** Depois de gerar `dist/SIG-Harness.apk`, copie para
+`/storage/emulated/0/Download/SIG-Harness-<versionName>-v<versionCode>.apk` e confira o
+sha256. O usuário instala pelo gerenciador de arquivos; não peça para ele procurar em `dist/`.
+
 **Somente quando o usuário pedir.** O ciclo normal é: mudar, incrementar `versionCode`,
 gerar `dist/SIG-Harness.apk` e deixar o usuário testar. Várias mudanças podem ser
 acumuladas antes de publicar — sem tag e sem release até o pedido explícito.
