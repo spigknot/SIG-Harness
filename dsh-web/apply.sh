@@ -257,18 +257,35 @@ ensure_profile_baseline() {
 # koffi (FFI do flock no Android): o pacote npm não traz o binário deste aparelho,
 # e sem ele todo turno falha com "Cannot find the native Koffi module".
 KOFFI_SRC="$HERE/artifacts/koffi-android-arm64.node"
-KOFFI_DST="$DSH/node_modules/koffi/build/koffi/android_arm64/koffi.node"
+# O pacote pode estar no prefixo padrão ou onde o npm global apontar.
+KOFFI_PKG=""
+for cand in "$DSH/node_modules/koffi" "$(npm root -g 2>/dev/null)/@deepseek-ai/dsh/node_modules/koffi"; do
+  [ -d "$cand" ] && KOFFI_PKG="$cand" && break
+done
 if [ ! -f "$KOFFI_SRC" ]; then
   echo "aviso: artefato do koffi ausente, o FFI do flock não será instalado" >&2
-elif [ ! -d "$DSH/node_modules/koffi" ]; then
-  echo "koffi pulado   pacote koffi não instalado"
-elif [ "$DRY" = 1 ]; then
-  echo "copiaria      koffi nativo -> node_modules/koffi/build/koffi/android_arm64/"
-elif [ -f "$KOFFI_DST" ] && cmp -s "$KOFFI_SRC" "$KOFFI_DST"; then
-  echo "koffi ok       binário nativo já no lugar"
+elif [ -z "$KOFFI_PKG" ]; then
+  echo "koffi pulado   pacote koffi não encontrado (procurei em DSH e npm root -g)"
 else
-  mkdir -p "$(dirname "$KOFFI_DST")"
-  cp "$KOFFI_SRC" "$KOFFI_DST" && echo "koffi ok       binário nativo instalado"
+  # Reaproveita o diretório android_* já existente; senão cria android_arm64.
+  KOFFI_DIR=""
+  for cand in "$KOFFI_PKG"/build/koffi/android_*; do
+    [ -d "$cand" ] && KOFFI_DIR="$cand" && break
+  done
+  [ -z "$KOFFI_DIR" ] && KOFFI_DIR="$KOFFI_PKG/build/koffi/android_arm64"
+  KOFFI_DST="$KOFFI_DIR/koffi.node"
+  if [ "$DRY" = 1 ]; then
+    echo "copiaria      koffi nativo -> $KOFFI_DST"
+  elif [ -f "$KOFFI_DST" ] && cmp -s "$KOFFI_SRC" "$KOFFI_DST"; then
+    echo "koffi ok       binário nativo já no lugar ($KOFFI_DIR)"
+  else
+    mkdir -p "$KOFFI_DIR"
+    if cp "$KOFFI_SRC" "$KOFFI_DST"; then
+      echo "koffi ok       binário nativo instalado em $KOFFI_DIR"
+    else
+      echo "aviso: falha ao copiar o koffi para $KOFFI_DIR" >&2
+    fi
+  fi
 fi
 
 if [ "$WITH_PROFILE" = 1 ]; then
