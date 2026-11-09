@@ -91,6 +91,12 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private View modelSheet;
     private final List<JSONObject> permissionQueue = new ArrayList<>();
 
+    /** Revalida o Termux ao voltar do navegador: instalar por fora não deve exigir reabrir o app. */
+    @Override protected void onResume() {
+        super.onResume();
+        if (startScreen != null) startScreen.setTermuxInstalled(TermuxRunner.isTermuxInstalled(this));
+    }
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(Ui.BG);
