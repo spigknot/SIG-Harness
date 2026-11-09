@@ -607,8 +607,11 @@ class Bridge {
       if (!bin) throw new BridgeError('dsh_not_found', 'DSH nao encontrado no Termux.');
       this.webStderr = [];
       const env = Object.assign({}, process.env, { DSH_PERMISSION_MODE: this.conf.permissionMode });
+      // cwd inexistente (aparelho novo) mata o spawn sem stderr: cai para o HOME do Termux.
+      const webCwd = existsSync(this.conf.cwd) ? this.conf.cwd : (process.env.HOME || process.cwd());
+      if (webCwd !== this.conf.cwd) log('[web] cwd ausente, usando ' + webCwd);
       const child = spawn(process.execPath, ['--expose-internals', bin, 'web', '--no-open', '--host', '127.0.0.1', '--port', '0'], {
-        cwd: this.conf.cwd,
+        cwd: webCwd,
         env,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -631,16 +634,19 @@ class Bridge {
           log('[web:err] ' + clip(line, 300));
         }
       });
+      let spawnFailure = null;
+      child.on('error', (err) => { spawnFailure = err; log('[web] spawn error: ' + err.message); });
       const deadline = Date.now() + 60000;
       while (!found && Date.now() < deadline) {
-        if (child.exitCode !== null) break;
+        if (child.exitCode !== null || spawnFailure !== null) break;
         await new Promise((r) => setTimeout(r, 250));
       }
       if (!found) {
         try { child.kill('SIGKILL'); } catch {}
         this.webChild = null;
         const tail = this.webStderr.slice(-5).join(' | ');
-        throw new BridgeError('web_failed', 'O servidor web nao iniciou. ' + (tail ? tail : ''));
+        const motivo = spawnFailure !== null ? spawnFailure.message : tail;
+        throw new BridgeError('web_failed', 'O servidor web nao iniciou. ' + (motivo ? motivo : ''));
       }
       this.webUrl = found;
       this.webOwned = true;
