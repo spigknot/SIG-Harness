@@ -34,6 +34,16 @@ o texto no Termux — um comando resolve, e depois é só voltar e tocar em Inic
 
 > Nas execuções seguintes o app só reaplica a camada `dsh-web` quando o APK muda. Nada é
 > baixado de novo.
+## Se algo der errado
+
+| Sintoma | Causa | Correção |
+|---|---|---|
+| Termux mostra `RunCommandService requires 'allow-external-apps'` | o Termux não foi liberado para receber comandos | rode no Termux: `mkdir -p ~/.termux && echo 'allow-external-apps=true' >> ~/.termux/termux.properties && termux-reload-settings` |
+| `CANNOT LINK EXECUTABLE "node": cannot locate symbol …` | node novo sobre bibliotecas antigas do Termux | rode `pkg upgrade -y` e depois `pkg install -y nodejs npm` |
+| Comando falhou dentro do `su` | o shell de root tem `$HOME` e PATH diferentes | saia com `exit` e rode no shell comum do Termux |
+| App parado em “Procurando o harness…” | comando enviado, bridge não subiu | confira `~/.sig-harness/bootstrap.log` e `~/.sig-harness/provision.log` |
+
+A tela inicial tem dois atalhos de cópia: **Liberar o Termux (copiar)** e **Comando manual (copiar)**.
 ## Localização
 
 O código deste projeto fica em `/storage/emulated/0/Projetos/sig-harness`.

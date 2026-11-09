@@ -86,7 +86,9 @@ public final class TermuxRunner {
                 // Idempotente — em aparelho pronto os dois comandos só conferem o PATH.
                 + "BOOT=\"$HOME/.sig-harness/bootstrap.log\"; "
                 + "command -v node >/dev/null 2>&1 || { echo \"[bootstrap] node\" >> \"$BOOT\"; "
-                + "yes | pkg update -y >> \"$BOOT\" 2>&1; yes | pkg install -y nodejs >> \"$BOOT\" 2>&1; }; "
+                // upgrade antes: node novo sobre libc++ antigo falha com "cannot locate symbol"
+                + "yes | pkg update -y >> \"$BOOT\" 2>&1; yes | pkg upgrade -y >> \"$BOOT\" 2>&1; "
+                + "yes | pkg install -y nodejs npm >> \"$BOOT\" 2>&1; }; "
                 + "command -v dsh >/dev/null 2>&1 || { echo \"[bootstrap] dsh " + DSH_BOOTSTRAP_VERSION + "\" >> \"$BOOT\"; "
                 + "npm i -g @deepseek-ai/dsh@" + DSH_BOOTSTRAP_VERSION + " >> \"$BOOT\" 2>&1; }; "
                 + "printf '%s' '" + bridgeBase64 + "' | base64 -d > \"$HOME/.sig-harness/sig-bridge.mjs\"; "

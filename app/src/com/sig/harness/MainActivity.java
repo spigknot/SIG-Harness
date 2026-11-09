@@ -251,6 +251,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         @Override public void onInstallTermux() { openInstallPage(); }
         @Override public void onOpenSettings() { showVoiceSettings(); }
         @Override public void onCopyBootstrap() { copyBootstrapCommand(); }
+        @Override public void onCopyTermuxSetup() { copyTermuxSetup(); }
     };
 
     private void openInstallPage() {
@@ -495,6 +496,16 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
                 });
             }
         }, "sig-probe").start();
+    }
+
+    /** Liberação do Termux, para colar quando o RUN_COMMAND é recusado. */
+    private void copyTermuxSetup() {
+        String command = "mkdir -p ~/.termux && echo 'allow-external-apps=true' >> ~/.termux/termux.properties && termux-reload-settings";
+        android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) { toast("Comando: " + command); return; }
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("SIG Harness", command));
+        toast("Copiado — cole no Termux (fora do su) e depois recarregue o Termux.");
     }
 
     /** Alternativa quando o Termux não aceita RUN_COMMAND: comando para colar no Termux. */

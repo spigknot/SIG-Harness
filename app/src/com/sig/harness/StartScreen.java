@@ -19,6 +19,7 @@ public final class StartScreen {
         void onInstallTermux();
         void onOpenSettings();
         void onCopyBootstrap();
+        void onCopyTermuxSetup();
     }
 
     private static final String[] STEP_LABELS = {"Termux", "Pacotes", "Bridge", "Autenticação", "Runtime"};
@@ -181,6 +182,15 @@ public final class StartScreen {
             @Override public void onClick(View v) { host.onCopyBootstrap(); }
         });
         content.addView(fallback);
+
+        TextView liberar = Ui.text(c, "Liberar o Termux (copiar)", 12.5f, Ui.MUTED, Ui.MEDIUM);
+        liberar.setGravity(Gravity.CENTER);
+        liberar.setPadding(0, Ui.dp(c, 8), 0, 0);
+        liberar.setClickable(true);
+        liberar.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { host.onCopyTermuxSetup(); }
+        });
+        content.addView(liberar);
 
         TextView foot = Ui.text(c, "O SIG fala direto com o DSH pelo Termux. A autenticação é automática — nada de navegador.", 11.5f, Ui.FAINT, Ui.REGULAR);
         foot.setGravity(Gravity.CENTER);
