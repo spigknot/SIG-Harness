@@ -157,7 +157,28 @@ class AcpRuntime {
     this.cb.onState(state, this.detail);
   }
 
+  /**
+   * Reaplica a camada dsh-web a cada start do bridge: o perfil só existe depois do
+   * primeiro boot do dsh, então o provisionamento feito pelo app pode ter chegado antes.
+   * apply.sh é idempotente e roda em segundo plano.
+   */
+  converge() {
+    try {
+      const base = process.env.HOME || process.cwd();
+      const script = path.join(base, '.sig-harness', 'dsh-web', 'apply.sh');
+      if (!existsSync(script)) return;
+      const out = openSync(path.join(base, '.sig-harness', 'provision.log'), 'a');
+      const child = spawn('/data/data/com.termux/files/usr/bin/bash', [script, '--auto'], {
+        detached: true, stdio: ['ignore', out, out]
+      });
+      child.unref();
+      log('[bootstrap] apply.sh --auto disparado');
+    } catch (err) {
+      log('[bootstrap] converge falhou: ' + (err && err.message));
+    }
+  }
   async start() {
+    this.converge();
     if (this.state === 'ready') return;
     if (this.startPromise) return this.startPromise;
     this.startPromise = this.startOnce().finally(() => { this.startPromise = null; });

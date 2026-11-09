@@ -212,6 +212,32 @@ ensure_web_search_tavily() {
 
 # Perfil vazio ou alheio (sem a nossa camada de modelos) recebe o perfil completo
 # embutido no APK; um perfil já configurado só recebe as entradas pontuais.
+# Perfil sem a camada móvel (aparelho novo) recebe o package.json do payload e roda o
+# instalador do DSH, que é quem fala pnpm no diretório do perfil.
+ensure_profile_bundles() {
+  [ -f "$PROFILE/package.json" ] || return 0
+  if [ -d "$PROFILE/node_modules/dsh-web-mobile" ]; then
+    return 0
+  fi
+  if [ "$DRY" = 1 ]; then
+    echo "instalaria     dsh-web-mobile no perfil"
+    return 0
+  fi
+  local name
+  name="$(basename "$PROFILE")"
+  if ! grep -q 'dsh-web-mobile' "$PROFILE/package.json" 2>/dev/null && [ -f "$HERE/profile/package.json" ]; then
+    cp "$HERE/profile/package.json" "$PROFILE/package.json"
+    echo "profile ok    package.json do perfil atualizado"
+  fi
+  echo "profile ..    instalando bundle móvel (pode demorar)"
+  if command -v dsh >/dev/null 2>&1; then
+    dsh plugin --profile "$name" install >> "${LOG_FILE:-/dev/null}" 2>&1 \
+      && echo "profile ok    bundle móvel instalado" \
+      || echo "aviso: instalação do bundle móvel falhou (veja o log)" >&2
+  else
+    echo "aviso: dsh fora do PATH, bundle móvel não instalado" >&2
+  fi
+}
 ensure_profile_baseline() {
   local cfg="$PROFILE/cordis.patch.yml"
   [ -d "$PROFILE" ] || return 0
@@ -264,6 +290,7 @@ elif [ "$AUTO" = 1 ]; then
   ensure_web_search_tavily
   ensure_index_entry
   ensure_disabled_entries
+  ensure_profile_bundles
 fi
 
 echo
