@@ -516,8 +516,8 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
 
     /** Alternativa quando o Termux não aceita RUN_COMMAND: comando para colar no Termux. */
     private void copyBootstrapCommand() {
-        String command = "pkg install -y nodejs && npm i -g @deepseek-ai/dsh@"
-                + TermuxRunner.DSH_BOOTSTRAP_VERSION
+        String command = "pkg update -y && pkg upgrade -y && pkg install -y nodejs npm"
+                + " && npm i -g @deepseek-ai/dsh@" + TermuxRunner.DSH_BOOTSTRAP_VERSION
                 + " && echo 'pronto: volte ao SIG Harness e toque em Iniciar Harness'";
         android.content.ClipboardManager clipboard =
                 (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
@@ -593,7 +593,12 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             if (!polling || finishing) return;
             if (bridge != null) { polling = false; return; }
             if (System.currentTimeMillis() > pollDeadline) {
-                failStart("O harness não respondeu", "O Termux pode estar iniciando. Verifique se o Termux está instalado, com o bridge em ~/.sig-harness/sig-bridge.mjs, e tente novamente.");
+                failStart("O harness não respondeu",
+                        "Passadas algumas dezenas de segundos o bridge não subiu. Causas comuns:\n"
+                        + "1) Termux sem allow-external-apps — use Liberar o Termux (copiar);\n"
+                        + "2) node quebrado no Termux: se aparecer CANNOT LINK EXECUTABLE, rode pkg upgrade -y e depois pkg install -y nodejs npm;\n"
+                        + "3) comando colado dentro do su — saia com exit e repita.\n"
+                        + "Logs: ~/.sig-harness/bootstrap.log e provision.log.");
                 return;
             }
             if (!scanning) {
