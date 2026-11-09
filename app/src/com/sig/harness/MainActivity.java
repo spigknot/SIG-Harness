@@ -77,6 +77,9 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private boolean pendingStartPermission;
     private boolean finishing;
     private long pollDeadline;
+    /** O primeiro uso instala node e DSH (pkg upgrade): minutos, não segundos. */
+    private static final long START_TIMEOUT_MS = 20L * 60L * 1000L;
+    private long pollStartedAt;
     private boolean refreshScheduled;
     private boolean runtimeWasReady;
     private String bridgeBase64;
@@ -626,7 +629,8 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         startScreen.setStep(2, 1, "aguardando o bridge");
         toast("Iniciando o SIG Harness…");
         polling = true;
-        pollDeadline = System.currentTimeMillis() + 90000L;
+        pollStartedAt = System.currentTimeMillis();
+        pollDeadline = pollStartedAt + START_TIMEOUT_MS;
         ui.post(pollRunnable);
     }
 
@@ -634,9 +638,17 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         @Override public void run() {
             if (!polling || finishing) return;
             if (bridge != null) { polling = false; return; }
+            long waited = System.currentTimeMillis() - pollStartedAt;
+            if (waited > 60000L && waited < 64000L && startScreen != null) {
+                startScreen.setStatus("Instalando pacotes no Termux — pode levar alguns minutos…", Ui.TEXT_SOFT);
+                startScreen.setStep(0, 2, "comando enviado");
+                startScreen.setStep(1, 1, "instalando pacotes (pkg upgrade)");
+            } else if (waited > 300000L && waited < 304000L && startScreen != null) {
+                startScreen.setStatus("Ainda instalando — conexão lenta aumenta o tempo", Ui.TEXT_SOFT);
+            }
             if (System.currentTimeMillis() > pollDeadline) {
                 failStart("O harness não respondeu",
-                        "Passadas algumas dezenas de segundos o bridge não subiu. Causas comuns:\n"
+                        "O bridge não subiu em 20 minutos. O primeiro uso instala node e DSH no Termux; se ainda estiver baixando, toque em Tentar novamente. Causas comuns:\n"
                         + "1) Termux sem allow-external-apps — use Liberar o Termux (copiar);\n"
                         + "2) node quebrado no Termux: se aparecer CANNOT LINK EXECUTABLE, rode pkg upgrade -y e depois pkg install -y nodejs npm;\n"
                         + "3) comando colado dentro do su — saia com exit e repita.\n"
@@ -785,7 +797,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             return;
         }
         polling = true;
-        pollDeadline = System.currentTimeMillis() + 90000L;
+        pollDeadline = System.currentTimeMillis() + START_TIMEOUT_MS;
         // O processo antigo precisa sair antes da primeira varredura, senão a ponte
         // morta ainda responde e devolve a URL expirada.
         ui.postDelayed(pollRunnable, 2500L);
