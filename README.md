@@ -2,38 +2,64 @@
 
 Aplicativo Android **nativo** para usar o DeepSeek Harness no Termux sem abrir o Chrome e sem copiar o link de autenticação.
 
-## Instalar
+## Instalar (do zero)
 
-O APK tem cerca de 230 KB e **não traz o DeepSeek Harness dentro**: ele prepara o aparelho,
-instala o que falta e aplica as customizações. Um pacote só, com alguns toques seus.
+O APK tem cerca de 480 KB e **não traz o DeepSeek Harness dentro**. Ele orienta a instalação,
+aplica as customizações por cima e abre a interface. Os passos 1–5 são feitos por você no
+Termux; o app copia cada comando com um toque.
 
-**Pré-requisitos (uma vez por aparelho):**
+### 1. Instalar o Termux
 
-1. Instale o **Termux** pelo [F-Droid](https://f-droid.org/packages/com.termux/) ou pelo
-   [GitHub](https://github.com/termux/termux-app/releases). A versão da Play Store está
-   descontinuada e não funciona com este app.
-2. Abra o Termux uma vez e libere comandos externos:
+Baixe pelo **[F-Droid](https://f-droid.org/packages/com.termux/)** (recomendado) ou pelo
+[GitHub](https://github.com/termux/termux-app/releases). A versão da **Play Store está
+descontinuada** e não funciona com este app.
 
-   ```bash
-   mkdir -p ~/.termux
-   echo "allow-external-apps=true" >> ~/.termux/termux.properties
-   ```
+Abra o Termux uma vez e deixe ele terminar de preparar os pacotes (`pkg update`).
 
-   Sem isso o Termux recusa receber comandos de outros aplicativos (e o SIG Harness avisa).
-3. Instale o APK do SIG Harness pela aba **Releases** deste repositório.
+### 2. Liberar o Termux para receber comandos
 
-**Depois, no SIG Harness:**
+No Termux (fora do `su`):
 
-- toque em **Iniciar Harness** e autorize o Termux quando o Android pedir;
-- o app instala o que faltar (`node`, `@deepseek-ai/dsh@0.2.1-rc.5`), aplica patches, plugins
-  e perfil, e abre a interface já autenticada;
-- a primeira execução baixa **~700 MB** e pode levar de 5 a 15 minutos. Tenha **~1 GB livre**.
+```bash
+mkdir -p ~/.termux
+echo 'allow-external-apps=true' >> ~/.termux/termux.properties
+termux-reload-settings
+```
 
-**Se o Termux recusar o comando**, toque em **Comando manual (copiar)** na tela inicial e cole
-o texto no Termux — um comando resolve, e depois é só voltar e tocar em Iniciar Harness.
+Sem isso o Termux recusa o comando do app e mostra *RunCommandService requires
+`allow-external-apps`*.
 
-> Nas execuções seguintes o app só reaplica a camada `dsh-web` quando o APK muda. Nada é
-> baixado de novo.
+### 3. Instalar Node e npm
+
+```bash
+pkg update -y && pkg upgrade -y && pkg install -y nodejs npm
+```
+
+O `pkg upgrade` é obrigatório: sem ele o Node novo não carrega e aparece
+`CANNOT LINK EXECUTABLE "node"`.
+
+### 4. Instalar o DeepSeek Harness
+
+```bash
+npm i -g @deepseek-ai/dsh@0.2.1-rc.5
+```
+
+### 5. Criar o perfil e instalar os bundles
+
+```bash
+dsh plugin --profile web install
+```
+
+Este passo é o que deixa o layout móvel correto: ele cria `~/.dsh/profiles/web`, instala o
+bundle `dsh-web-mobile` e só então a camada do SIG é aplicada por cima.
+
+### 6. Voltar ao SIG Harness
+
+Toque em **Iniciar Harness**. O app envia a camada `dsh-web` (patches, plugins, addon nativo),
+aplica no DSH, sobe a bridge e abre a interface já autenticada.
+
+> Se o Termux continuar recusando o comando, use **Liberar o Termux (copiar)** na tela inicial.
+> Nas próximas aberturas nada é baixado de novo: o app só reaplica a camada quando o APK muda.
 ## Se algo der errado
 
 | Sintoma | Causa | Correção |

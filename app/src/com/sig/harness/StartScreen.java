@@ -20,6 +20,7 @@ public final class StartScreen {
         void onOpenSettings();
         void onCopyBootstrap();
         void onCopyTermuxSetup();
+        void onCopyGuide(int step);
     }
 
     private static final String[] STEP_LABELS = {"Termux", "Pacotes", "Bridge", "Autenticação", "Runtime"};
@@ -189,6 +190,76 @@ public final class StartScreen {
         });
         content.addView(secondary);
 
+
+        // Guia manual: o usuário instala o DSH; o app só orienta e depois aplica a camada.
+        LinearLayout guide = Ui.column(c);
+        guide.setBackground(Ui.stroke(Ui.SURFACE, Color.rgb(44, 58, 82), 1, 16f, c));
+        guide.setPadding(Ui.dp(c, 16), Ui.dp(c, 14), Ui.dp(c, 16), Ui.dp(c, 14));
+        LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        glp.topMargin = Ui.dp(c, 20);
+
+        TextView gTitle = Ui.text(c, "Instalação manual", 15f, Ui.TEXT, Ui.MEDIUM);
+        guide.addView(gTitle);
+        TextView gHint = Ui.text(c, "Toque em Copiar, cole no Termux e execute. Faça na ordem; depois volte e toque em Iniciar Harness.", 11.5f, Ui.MUTED, Ui.REGULAR);
+        gHint.setLineSpacing(Ui.dp(c, 3), 1.0f);
+        LinearLayout.LayoutParams ghlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        ghlp.topMargin = Ui.dp(c, 4);
+        guide.addView(gHint, ghlp);
+
+        String[] guideSteps = {
+            "2. Liberar o Termux",
+            "3. Instalar Node e npm",
+            "4. Instalar o DeepSeek Harness",
+            "5. Criar o perfil e os bundles"
+        };
+        LinearLayout termuxRow = Ui.row(c);
+        LinearLayout.LayoutParams trlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(c, 44));
+        trlp.topMargin = Ui.dp(c, 10);
+        termuxRow.addView(Ui.text(c, "1. Instalar o Termux", 13f, Ui.TEXT_SOFT, Ui.REGULAR),
+                Ui.lpWeight(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        TextView installTermux = Ui.text(c, "Instalar", 12.5f, Ui.ACCENT, Ui.MEDIUM);
+        installTermux.setPadding(Ui.dp(c, 12), Ui.dp(c, 10), Ui.dp(c, 10), Ui.dp(c, 10));
+        installTermux.setBackground(Ui.ripple(Ui.ACCENT_SOFT, 10f, c));
+        installTermux.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { host.onInstallTermux(); }
+        });
+        termuxRow.addView(installTermux);
+        TextView openTermux = Ui.text(c, "Abrir", 12.5f, Ui.MUTED, Ui.MEDIUM);
+        openTermux.setPadding(Ui.dp(c, 8), Ui.dp(c, 10), Ui.dp(c, 2), Ui.dp(c, 10));
+        openTermux.setClickable(true);
+        openTermux.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { host.onOpenTermux(); }
+        });
+        termuxRow.addView(openTermux);
+        guide.addView(termuxRow, trlp);
+
+        TextView termuxHint = Ui.text(c, "Use o F-Droid (recomendado). A versão da Play Store está descontinuada e não funciona.", 11f, Ui.FAINT, Ui.REGULAR);
+        termuxHint.setLineSpacing(Ui.dp(c, 2), 1.0f);
+        guide.addView(termuxHint);
+        for (int i = 0; i < guideSteps.length; i++) {
+            final int step = i + 1;
+            LinearLayout row = Ui.row(c);
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(c, 44));
+            rlp.topMargin = Ui.dp(c, 2);
+            TextView label = Ui.text(c, guideSteps[i], 13f, Ui.TEXT_SOFT, Ui.REGULAR);
+            row.addView(label, Ui.lpWeight(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            TextView copy = Ui.text(c, "Copiar", 12.5f, Ui.ACCENT, Ui.MEDIUM);
+            copy.setPadding(Ui.dp(c, 14), Ui.dp(c, 10), Ui.dp(c, 2), Ui.dp(c, 10));
+            copy.setBackground(Ui.ripple(Ui.ACCENT_SOFT, 10f, c));
+            copy.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) { host.onCopyGuide(step); }
+            });
+            row.addView(copy);
+            guide.addView(row, rlp);
+        }
+
+        TextView gFoot = Ui.text(c, "O passo 4 é o que deixa o layout móvel certo: ele cria o perfil e instala os bundles antes de aplicarmos o SIG por cima.", 11f, Ui.FAINT, Ui.REGULAR);
+        gFoot.setLineSpacing(Ui.dp(c, 3), 1.0f);
+        LinearLayout.LayoutParams gfl = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        gfl.topMargin = Ui.dp(c, 10);
+        guide.addView(gFoot, gfl);
+
+        content.addView(guide, glp);
         TextView fallback = Ui.text(c, "Comando manual (copiar)", 12.5f, Ui.MUTED, Ui.MEDIUM);
         fallback.setGravity(Gravity.CENTER);
         fallback.setPadding(0, Ui.dp(c, 14), 0, 0);

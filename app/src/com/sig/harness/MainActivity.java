@@ -311,6 +311,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         @Override public void onOpenSettings() { showVoiceSettings(); }
         @Override public void onCopyBootstrap() { copyBootstrapCommand(); }
         @Override public void onCopyTermuxSetup() { copyTermuxSetup(); }
+        @Override public void onCopyGuide(int step) { copyGuideStep(step); }
     };
 
     private void openInstallPage() {
@@ -555,6 +556,36 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
                 });
             }
         }, "sig-probe").start();
+    }
+
+    /** Comandos do guia manual, na ordem em que devem ser executados no Termux. */
+    private void copyGuideStep(int step) {
+        String version = TermuxRunner.DSH_BOOTSTRAP_VERSION;
+        String command;
+        String toast;
+        switch (step) {
+            case 1:
+                command = "mkdir -p ~/.termux && echo 'allow-external-apps=true' >> ~/.termux/termux.properties && termux-reload-settings";
+                toast = "Passo 1 copiado — cole no Termux (fora do su).";
+                break;
+            case 2:
+                command = "pkg update -y && pkg upgrade -y && pkg install -y nodejs npm";
+                toast = "Passo 2 copiado — pode demorar alguns minutos.";
+                break;
+            case 3:
+                command = "npm i -g @deepseek-ai/dsh@" + version;
+                toast = "Passo 3 copiado — instala o DSH.";
+                break;
+            default:
+                command = "dsh plugin --profile web install";
+                toast = "Passo 4 copiado — cria o perfil e instala os bundles.";
+                break;
+        }
+        android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) { toast(command); return; }
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("SIG Harness", command));
+        toast(toast);
     }
 
     /** Liberação do Termux, para colar quando o RUN_COMMAND é recusado. */
