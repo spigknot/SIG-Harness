@@ -16,6 +16,8 @@ ambiente inteiro.
 | `plugin/dsh-web-sig-search-tavily/` | página **Busca na web** nas Configurações: grava a chave no cofre via rota do host |
 | `profile/` | conteúdo de `~/.dsh/profiles/web` — `cordis.patch.yml` é a camada de configuração |
 | `apply.sh` | aplica os patches, instala o plugin e o addon |
+| `rea.sh` / `rea.env` | liga o DSH ao **REA** que roda no PC (MCP por streamable-http, ver `REA.md`) |
+| `REA.md` | como instalar o REA + Ghidra no PC e apontar o DSH para ele |
 | `capture.sh` | regenera os patches e o artefato depois de atualizar o DSH |
 | `pin.env` | versão de cada pacote contra a qual os patches foram gerados |
 | `tools/pristine.mjs` | recupera o pacote publicado a partir do cache do npm (funciona offline) |
@@ -146,6 +148,22 @@ em vez de `./apply.sh`.
 
 O plugin `dsh-web-sig-voice` mora em `~/.dsh/profiles/web/node_modules` — um `pnpm install`
 no profile pode apagá-lo. `apply.sh` recoloca a cópia versionada.
+
+## REA (engenharia reversa)
+
+O **REA** é um servidor MCP de engenharia reversa que precisa do Ghidra/JADX na
+mesma máquina — por isso ele roda no **PC**, não no Termux (`rea doctor` recusa
+`android arm64`). Hoje: container `rea` no `servidor` (Tailscale `100.70.207.12:8765`),
+irmao do container do Ghidra. O DSH conecta por `streamable-http` na rede Tailscale:
+
+```bash
+bash dsh-web/rea.sh 100.x.y.z      # grava a URL e registra a entrada rea-mcp
+bash dsh-web/rea.sh --off          # remove
+```
+
+O registro vai para `~/.dsh/cordis.patch.yml` (patch de **casa**, aplicado a todos
+os profiles e não sobrescrito pelo APK) e é refeito por `apply.sh --auto`. As
+ferramentas aparecem como `mcp__rea__*`. Passo a passo do PC em [REA.md](REA.md).
 
 ## Atualizar o DSH
 

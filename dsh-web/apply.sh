@@ -210,6 +210,19 @@ ensure_web_search_tavily() {
   echo "profile ok    busca na web -> tavily"
 }
 
+# REA (Reverse Engineer Anything) roda no PC, não aqui: o MCP chega por
+# streamable-http pela rede Tailscale. A URL fica em dsh-web/rea.env e o
+# registro é idempotente no patch de casa (~/.dsh/cordis.patch.yml), que o APK
+# não sobrescreve.
+ensure_rea_mcp() {
+  [ -f "$HERE/rea.sh" ] || return 0
+  if [ "$DRY" = 1 ]; then
+    echo "registraria   REA a partir de dsh-web/rea.env"
+    return 0
+  fi
+  bash "$HERE/rea.sh" --sync 2>/dev/null || echo "aviso: falha ao registrar o REA" >&2
+}
+
 # Perfil vazio ou alheio (sem a nossa camada de modelos) recebe o perfil completo
 # embutido no APK; um perfil já configurado só recebe as entradas pontuais.
 # Perfil sem a camada móvel (aparelho novo) recebe o package.json do payload e roda o
@@ -309,6 +322,8 @@ elif [ "$AUTO" = 1 ]; then
   ensure_disabled_entries
   ensure_profile_bundles
 fi
+
+ensure_rea_mcp
 
 echo
 echo "reinicie o host web para a interface recarregar:  pkill -f 'dsh web' ; dsh web"
