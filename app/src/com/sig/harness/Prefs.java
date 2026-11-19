@@ -73,11 +73,11 @@ public final class Prefs {
     }
 
     public boolean boot() {
-        return sp.getBoolean("boot", true);
+        return sp.getBoolean("webBoot", false);
     }
 
     public void setBoot(boolean value) {
-        sp.edit().putBoolean("boot", value).apply();
+        sp.edit().putBoolean("webBoot", value).apply();
     }
 
     public String modelValue() {

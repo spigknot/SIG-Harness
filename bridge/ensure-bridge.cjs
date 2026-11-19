@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const [action, dir, base, token, cwd, revision] = process.argv.slice(2);
+const [action, dir, base, token, cwd, revision, startMode] = process.argv.slice(2);
 const bridge = path.join(dir, 'sig-bridge.mjs');
 const state = path.join(dir, 'bridge.json');
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -49,8 +49,9 @@ async function main() {
     if (error.code !== 'ENOENT') throw error;
   }
   const fd = fs.openSync(log, 'a', 0o600);
+  const bootArgs = startMode === '--auto-start' ? ['--auto-start'] : [];
   const child = spawn(process.execPath, [bridge, '--port', base, '--token', token,
-    '--cwd', cwd, '--revision', revision], { detached: true, stdio: ['ignore', fd, fd] });
+    '--cwd', cwd, '--revision', revision, ...bootArgs], { detached: true, stdio: ['ignore', fd, fd] });
   fs.closeSync(fd);
   let failed = false;
   child.once('error', () => { failed = true; });

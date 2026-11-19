@@ -8,6 +8,7 @@ public final class AppBridge {
         /** Encerra o dsh web atual e sobe um processo novo, recarregando a interface. */
         void restartHarness();
         void requestInstallationRepair();
+        void showBootSettings();
     }
 
     private final Host host;
@@ -19,6 +20,11 @@ public final class AppBridge {
     @JavascriptInterface
     public void requestInstallationRepair() {
         if (host != null) host.requestInstallationRepair();
+    }
+
+    @JavascriptInterface
+    public void showBootSettings() {
+        host.showBootSettings();
     }
 
     @JavascriptInterface

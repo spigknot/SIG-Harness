@@ -235,4 +235,6 @@ if [ "$restart" = 1 ]; then
   fi
 fi
 if [ ! -s "$state/acp.patch.yml" ]; then mv -- "$stage/bridge/acp.patch.yml" "$state/acp.patch.yml"; fi
+cp -- "$manage" "$state/ensure-bridge.cjs.tmp"
+mv -f -- "$state/ensure-bridge.cjs.tmp" "$state/ensure-bridge.cjs"
 node "$manage" start "$state" "$port" "$token" "$cwd" "$expected" 9>&-

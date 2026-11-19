@@ -1036,14 +1036,59 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
 
     // ---------------------------------------------------------------- boot / web / model
 
-    private void configureBoot() {
-        if (bridge == null) return;
+    @Override public void showBootSettings() {
+        ui.post(() -> {
+            if (finishing || startFlow || screen != SCREEN_WEB || bridge == null) return;
+            boolean enabled = prefs.boot();
+            new AlertDialog.Builder(this)
+                    .setTitle("Iniciar DSH ao ligar")
+                    .setMessage(enabled
+                            ? "Ativado. O Termux:Boot inicia o DSH e o acesso fica disponível quando o Tailscale conectar."
+                            : "O Termux:Boot pode iniciar o DSH sem abrir o SIG Harness. O acesso fica disponível quando o Tailscale conectar.")
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton(enabled ? "Desativar" : "Ativar", (dialog, which) -> {
+                        if (!enabled && !TermuxRunner.isBootInstalled(this)) {
+                            new AlertDialog.Builder(this)
+                                    .setTitle("Instale o Termux:Boot")
+                                    .setMessage("Instale o complemento compatível com o seu Termux, abra-o uma vez e volte aqui para ativar.")
+                                    .setNegativeButton("Cancelar", null)
+                                    .setPositiveButton("Abrir F-Droid", (d, w) -> openTermuxBootInstall())
+                                    .show();
+                            return;
+                        }
+                        updateWebBoot(!enabled);
+                    })
+                    .show();
+        });
+    }
+
+    private void updateWebBoot(boolean enabled) {
+        BridgeClient client = bridge;
+        if (client == null) return;
+        JSONObject params = bootParams(enabled);
+        client.request("boot.configure", params, new BridgeClient.Callback() {
+            @Override public void onResult(JSONObject result) {
+                prefs.setBoot(enabled);
+                toast(enabled ? "Início automático ativado." : "Início automático desativado.");
+            }
+            @Override public void onError(String code, String message) {
+                toast("Não foi possível salvar o início automático.");
+            }
+        });
+    }
+
+    private JSONObject bootParams(boolean enabled) {
         JSONObject params = new JSONObject();
         try {
-            params.put("enabled", prefs.boot());
+            params.put("enabled", enabled);
             params.put("cwd", prefs.cwd());
-        } catch (Exception ignored) { }
-        bridge.request("boot.configure", params, new BridgeClient.Callback() {
+        } catch (org.json.JSONException ignored) { }
+        return params;
+    }
+
+    private void configureBoot() {
+        if (bridge == null) return;
+        bridge.request("boot.configure", bootParams(prefs.boot()), new BridgeClient.Callback() {
             @Override public void onResult(JSONObject result) { }
             @Override public void onError(String code, String message) { }
         });

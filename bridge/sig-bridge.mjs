@@ -3,7 +3,7 @@
 // tiny line-delimited JSON protocol on 127.0.0.1 for the Android app.
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
@@ -528,31 +528,34 @@ class Bridge {
     const bootDir = path.join(HOME, '.termux', 'boot');
     const file = path.join(bootDir, 'sig-harness.sh');
     if (!enabled) {
-      try { unlinkSync(file); } catch {}
+      try { unlinkSync(file); } catch (error) { if (error.code !== 'ENOENT') throw error; }
       log('[boot] disabled');
       return { enabled: false, path: file };
     }
     mkdirSync(bootDir, { recursive: true });
     const cwd = params && typeof params.cwd === 'string' && params.cwd.startsWith('/') ? params.cwd : this.conf.cwd;
-    const node = '/data/data/com.termux/files/usr/bin/node';
+    const state = shellQuote(STATE_DIR);
+    const prefix = '/data/data/com.termux/files/usr';
     const lines = [
-      '#!/data/data/com.termux/files/usr/bin/bash',
-      '# SIG Harness: sobe o harness no boot (Termux:Boot).',
+      '#!' + prefix + '/bin/bash',
+      'set -eu',
+      'umask 077',
       'export HOME=' + shellQuote(HOME),
-      'export PATH=/data/data/com.termux/files/usr/bin:$PATH',
-      'LOG="$HOME/.sig-harness/boot.log"',
-      'mkdir -p "$HOME/.sig-harness"',
-      'CODE=$(/data/data/com.termux/files/usr/bin/curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://127.0.0.1:' + this.port + '/ 2>/dev/null)',
-      'if [ -n "$CODE" ] && [ "$CODE" != "000" ]; then echo "$(date) bridge em execucao" >> "$LOG"; exit 0; fi',
-      '[ -f "$HOME/.sig-harness/sig-bridge.mjs" ] || { echo "$(date) bridge ausente" >> "$LOG"; exit 0; }',
-      'echo "$(date) iniciando SIG Harness" >> "$LOG"',
-      'exec ' + node + ' "$HOME/.sig-harness/sig-bridge.mjs" --daemon --port ' + this.port
-        + ' --token ' + shellQuote(this.conf.token) + ' --cwd ' + shellQuote(cwd)
-        + ' --revision ' + shellQuote(this.conf.revision)
-        + ' --permission-mode ' + shellQuote(this.conf.permissionMode) + ' --idle-minutes 0 --log "$HOME/.sig-harness/bridge.log"',
+      'export PREFIX=' + prefix,
+      'export PATH="$PREFIX/bin:/system/bin"',
+      'export TMPDIR="$PREFIX/tmp"',
+      'export DSH_HOME="$HOME/.dsh"',
+      'STATE=' + state,
+      'exec >> "$STATE/boot.log" 2>&1',
+      'exec 9>"$STATE/install.lock"',
+      '/system/bin/timeout -k 5s 10m /system/bin/flock -x 9',
+      'exec node "$STATE/ensure-bridge.cjs" start "$STATE" ' + this.conf.port
+        + ' ' + shellQuote(this.conf.token) + ' ' + shellQuote(cwd)
+        + ' ' + shellQuote(this.conf.revision) + ' --auto-start',
     ];
-    writeFileSync(file, lines.join('\n') + '\n', { mode: 0o700 });
-    try { chmodSync(file, 0o700); } catch {}
+    const temporary = path.join(bootDir, '..', 'sig-harness-boot.tmp');
+    writeFileSync(temporary, lines.join('\n') + '\n', { mode: 0o700 });
+    renameSync(temporary, file);
     log('[boot] script ' + file);
     return { enabled: true, path: file, port: this.port, cwd };
   }
@@ -1410,6 +1413,9 @@ class Bridge {
 
 const bridge = new Bridge(opts);
 await bridge.listen();
+if (opts.autoStart) {
+  bridge.webStart({ remoteAccess: true }).catch(error => log('[boot] ' + error.message));
+}
 setInterval(() => {
   if (bridge.shuttingDown) return;
   if (opts.autoStart || opts.idleMinutes <= 0) return;

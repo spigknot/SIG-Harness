@@ -195,17 +195,29 @@ window.__ModuleLoader__.load({
       });
     }
 
-    function RepairButton() {
+    function InstallationActions() {
       const app = window.SigApp;
       if (!app || typeof app.requestInstallationRepair !== "function") return null;
-      return jsx.jsx("button", {
-        type: "button",
-        onClick: () => app.requestInstallationRepair(),
-        style: {
-          marginTop: "18px", border: "1px solid " + LINE, background: "transparent",
-          color: TEXT, borderRadius: "9px", padding: "8px 14px", cursor: "pointer"
-        },
-        children: "Reparar instalação"
+      const buttonStyle = {
+        marginTop: "18px", border: "1px solid " + LINE, background: "transparent",
+        color: TEXT, borderRadius: "9px", padding: "8px 14px", cursor: "pointer"
+      };
+      return jsx.jsxs("div", {
+        style: { display: "flex", flexWrap: "wrap", gap: "8px" },
+        children: [
+          typeof app.showBootSettings === "function" ? jsx.jsx("button", {
+            type: "button",
+            onClick: () => app.showBootSettings(),
+            style: buttonStyle,
+            children: "Iniciar DSH ao ligar"
+          }) : null,
+          jsx.jsx("button", {
+            type: "button",
+            onClick: () => app.requestInstallationRepair(),
+            style: buttonStyle,
+            children: "Reparar instalação"
+          })
+        ]
       });
     }
 
@@ -217,11 +229,11 @@ window.__ModuleLoader__.load({
         id: "sig-voice",
         order: 90
       }, VoiceBlock));
-      ctx.slots.inject("settings.models.footer", () => ctx.slots.register({
-        name: "settings.models.footer",
-        id: "sig-repair",
-        order: 100
-      }, RepairButton));
+      ctx.slots.inject("settings.general.item", () => ctx.slots.register({
+        name: "settings.general.item",
+        id: "sig-installation-actions",
+        order: 1000
+      }, InstallationActions));
     }
 
     exports.apply = apply;
