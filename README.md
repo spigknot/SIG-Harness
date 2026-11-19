@@ -23,7 +23,7 @@ Para investigar uma falha, consulte **~/.sig-harness/bootstrap.log** e **~/.sig-
 
 ## Acesso pela rede Tailscale
 
-Com o Tailscale conectado no OnePlus, o app libera automaticamente a porta fixa **3080**. Em um navegador conectado à mesma tailnet, abra **http://<IP-Tailscale-do-OnePlus>:3080**. A porta encaminha para o DSH ativo, mesmo quando a porta interna dele muda.
+Com o Tailscale conectado no OnePlus, o app libera automaticamente a porta fixa **3080**. Em um navegador conectado à mesma tailnet, abra **http://IP-Tailscale-do-OnePlus:3080**. A porta encaminha para o DSH ativo, mesmo quando a porta interna dele muda.
 
 O acesso é controlado pelas regras da sua tailnet. Não é necessário configurar encaminhamento de portas no roteador.
 
