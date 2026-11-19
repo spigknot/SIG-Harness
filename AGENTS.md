@@ -38,6 +38,24 @@ APK (assets/dsh-web.tgz)
    provisiona quando o hash de `dsh-web.tgz` muda. Para aplicar mudança só de plugin: bump de
    versão + botão `⟳`. Para valer em aparelho novo: APK novo.
 
+
+9. **Payload grande não viaja no Intent do Termux.** O Binder limita a
+   transação a ~1 MB e strings em Parcel são UTF-16. O `dsh-web.tgz` atual
+   (com koffi) tem 435 KB e estouraria; o app grava em
+   `Android/media/com.sig.harness/dsh-web.tgz` e envia só o caminho. Não
+   volte a embutir o tgz em base64 no `RUN_COMMAND_ARGUMENTS`.
+10. **Cookie do dsh é por autoridade.** O host troca de porta a cada
+    `web.start`; cookies não são isolados por porta. Limpe o jar do WebView
+    antes de cada carga (`WebScreen.load`) ou o header `Cookie` passa de
+    16 KB e o Node responde 431 (`ERR_HTTP_RESPONSE_CODE_FAILURE`).
+11. **`npm i` do DSH apaga patches e addon.** Rode `apply.sh --auto` depois de
+    qualquer instalação/atualização. O bridge 1.3.2 faz isso antes do
+    `web.start`; em versão antiga, o comando manual é obrigatório.
+12. **`apply.sh` fora do Termux precisa de `TMPDIR` do Termux.** Se rodar via
+    `su`/`setpriv` com o `TMPDIR` do Hermes, o `patch` falha e o script diz
+    “base mudou” sem ter mudado. Exporte
+    `TMPDIR=/data/data/com.termux/files/usr/tmp`.
+
 ## Verificação antes de publicar
 
 ```bash

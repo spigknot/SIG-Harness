@@ -68,6 +68,10 @@ aplica no DSH, sobe a bridge e abre a interface já autenticada.
 | `CANNOT LINK EXECUTABLE "node": cannot locate symbol …` | node novo sobre bibliotecas antigas do Termux | rode `pkg upgrade -y` e depois `pkg install -y nodejs npm` |
 | Comando falhou dentro do `su` | o shell de root tem `$HOME` e PATH diferentes | saia com `exit` e rode no shell comum do Termux |
 | App parado em “Procurando o harness…” | comando enviado, bridge não subiu | confira `~/.sig-harness/bootstrap.log` e `~/.sig-harness/provision.log` |
+| `No usable native binding found for node-addon-require-builtin` | `npm i` do DSH apagou o addon nativo | rode `bash dsh-web/apply.sh --auto` e tente de novo |
+| `TransactionTooLargeException: data parcel size` | APK antigo mandava o payload em base64 no Intent | instale o APK 1.3.14+ (versionCode 66) |
+| WebView `ERR_HTTP_RESPONSE_CODE_FAILURE` em `127.0.0.1` | cookies `dsh-auth-*` acumulados; host responde 431 | instale o APK 1.3.14+ e reabra o app |
+| Modo web não abre | addon, Binder ou cookies | siga `dsh-web/RUNBOOK.md` |
 
 A tela inicial tem dois atalhos de cópia: **Liberar o Termux (copiar)** e **Comando manual (copiar)**.
 ## Localização

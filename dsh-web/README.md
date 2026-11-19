@@ -146,6 +146,9 @@ pkill -f 'dsh web' && dsh web       # reinicia o host para carregar
 O armazenamento compartilhado não executa scripts diretamente, por isso sempre `bash ...`
 em vez de `./apply.sh`.
 
+Se o modo web não abrir, o diagnóstico passo a passo (addon nativo, Binder e
+cookies/431) está em [RUNBOOK.md](RUNBOOK.md).
+
 O plugin `dsh-web-sig-voice` mora em `~/.dsh/profiles/web/node_modules` — um `pnpm install`
 no profile pode apagá-lo. `apply.sh` recoloca a cópia versionada.
 

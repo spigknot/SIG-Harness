@@ -53,3 +53,40 @@ Registro cronológico. Cada linha evita que o mesmo erro volte.
 - **Causa:** o patch de Android cobria a publicação do objeto, mas não o `link(2)` do alias.
 - **Correção:** alias cai para `copyFile` quando o link é recusado.
 - **Regra:** procurar todos os `link(` do arquivo, não só o primeiro.
+
+## 2026-11-19
+
+### Modo web morria com “No usable native binding”
+- **Sintoma:** “Não foi possível abrir o modo web / O servidor web nao iniciou.
+  attempts: undefined | …”.
+- **Causa:** `npm i -g @deepseek-ai/dsh` recriou `node_modules` e apagou o
+  `require_builtin.node`; o bridge 1.2.1 não reaplicava a camada antes do
+  `web.start`.
+- **Correção:** `apply.sh --auto` restaura addon/koffi; bridge 1.3.2 roda isso
+  antes de subir o host e valida o URL em cache.
+- **Regra:** depois de qualquer `npm i` do DSH, rode `apply.sh --auto`. O APK
+  não pode depender de arquivos que o npm recria.
+
+### Payload com koffi estourou o Binder
+- **Sintoma:** “Não foi possível falar com o Termux” +
+  `TransactionTooLargeException: data parcel size 1332368 bytes`.
+- **Causa:** o `dsh-web.tgz` (435 KB, koffi 1,14 MB) em base64/UTF-16 passava
+  de 1 MB no `Intent` do Termux.
+- **Correção:** o app grava o tgz em
+  `/storage/emulated/0/Android/media/com.sig.harness/` e envia só o caminho; o
+  `TermuxRunner` copia com `cp`. Fallback em base64 só se o diretório falhar.
+- **Regra:** payload grande não viaja em extra de `Intent`; use arquivo
+  compartilhado em `Android/media/<pacote>/`.
+
+### Cookies `dsh-auth-*` acumulados -> HTTP 431
+- **Sintoma:** WebView “Webpage not available” com
+  `net::ERR_HTTP_RESPONSE_CODE_FAILURE`; no `tcpdump`, `431 Request Header
+  Fields Too Large`.
+- **Causa:** cada `web.start` usa uma porta nova e o cookie é por autoridade
+  (`host:porta`), mas cookies não são isolados por porta. O jar chegou a 70
+  cookies e ~16,5 KB de header.
+- **Correção:** `WebScreen.load()` limpa os cookies antes de carregar o URL;
+  `web.start` valida o URL em cache; geração por request ignora resposta
+  antiga.
+- **Regra:** ao trocar a porta do host local, limpe o cookie jar do WebView.
+  `431` em localhost é header grande, não falta de token.
