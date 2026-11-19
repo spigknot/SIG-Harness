@@ -1,79 +1,46 @@
-# SIG Harness 1.3.4
+# SIG Harness 1.5.0
 
-Aplicativo Android **nativo** para usar o DeepSeek Harness no Termux sem abrir o Chrome e sem copiar o link de autenticação.
+Aplicativo Android para abrir o DeepSeek Harness no próprio app com as personalizações do SIG.
 
-## Instalar (do zero)
+## Preparação no aparelho
 
-O APK tem cerca de 480 KB e **não traz o DeepSeek Harness dentro**. Ele orienta a instalação,
-aplica as customizações por cima e abre a interface. Os passos 1–5 são feitos por você no
-Termux; o app copia cada comando com um toque.
+1. Instale o Termux compatível pelo [F-Droid](https://f-droid.org/packages/com.termux/) ou pelo
+   [repositório oficial](https://github.com/termux/termux-app/releases). Abra o Termux uma vez e
+   deixe o ambiente inicial terminar.
+2. Na tela inicial do SIG Harness, toque em **Copiar comando para liberar o Termux** e execute esse
+   comando na sessão comum do Termux. Conceda ao Termux acesso aos arquivos do aparelho para ler o
+   pacote compartilhado em `Android/media/com.sig.harness/`.
+3. Volte ao SIG Harness e conceda **Executar comandos no Termux** quando o Android pedir.
 
-### 1. Instalar o Termux
+## Abertura e reparo
 
-Baixe pelo **[F-Droid](https://f-droid.org/packages/com.termux/)** (recomendado) ou pelo
-[GitHub](https://github.com/termux/termux-app/releases). A versão da **Play Store está
-descontinuada** e não funciona com este app.
+Na abertura, o app verifica as ferramentas do Termux, Node.js, npm e pnpm, a versão do DSH do
+`dsh-web/pin.env`, os patches, o addon, o Koffi, o bloqueio de arquivos e o perfil web. Quando
+encontra uma falha, corrige o componente e repete a verificação. A ponte local só é selecionada
+depois que a checagem termina. O app captura a URL de autenticação atual e carrega a página em seu
+WebView.
 
-Abra o Termux uma vez e deixe ele terminar de preparar os pacotes (`pkg update`).
+Em um aparelho novo, o instalador pede ao próprio DSH que inicialize o perfil Web em segundo
+plano. Em seguida, instala o bundle móvel e aplica as preferências e os plugins do SIG.
 
-### 2. Liberar o Termux para receber comandos
+**Reparar instalação** está na tela inicial e no topo da interface web. Roda a mesma checagem
+item por item, repõe componentes ausentes ou inválidos e reinicia a ponte. A versão do DSH
+compatível com os patches é preparada em uma pasta temporária antes de substituir o pacote ativo.
+As conversas ficam em `~/.dsh/sessions`. Configurações inválidas do perfil web recebem uma cópia
+de segurança antes de serem restauradas.
 
-No Termux (fora do `su`):
+A tela mostra a etapa em andamento. Em caso de falha, veja
+`~/.sig-harness/bootstrap.log` e `~/.sig-harness/bridge.log` no Termux. O
+[runbook](dsh-web/RUNBOOK.md) documenta as regressões e como verificar cada etapa.
 
-```bash
-mkdir -p ~/.termux
-echo 'allow-external-apps=true' >> ~/.termux/termux.properties
-termux-reload-settings
-```
+## Controlar pelo navegador
 
-Sem isso o Termux recusa o comando do app e mostra *RunCommandService requires
-`allow-external-apps`*.
+Com o Tailscale conectado no OnePlus, abra o SIG Harness para liberar o acesso automaticamente.
+Em outro aparelho autorizado na mesma rede Tailscale, abra `http://oneplus15:3080`
+(ou `http://100.108.27.64:3080` sem MagicDNS). A porta 3080 encaminha para o DSH que
+o app abriu, mesmo que o serviço local seja reiniciado em outra porta. A autorização é
+feita pelas regras de acesso do Tailscale.
 
-### 3. Instalar Node e npm
-
-```bash
-pkg update -y && pkg upgrade -y && pkg install -y nodejs npm
-```
-
-O `pkg upgrade` é obrigatório: sem ele o Node novo não carrega e aparece
-`CANNOT LINK EXECUTABLE "node"`.
-
-### 4. Instalar o DeepSeek Harness
-
-```bash
-npm i -g @deepseek-ai/dsh@0.2.1-rc.5
-```
-
-### 5. Criar o perfil e instalar os bundles
-
-```bash
-dsh plugin --profile web install
-```
-
-Este passo é o que deixa o layout móvel correto: ele cria `~/.dsh/profiles/web`, instala o
-bundle `dsh-web-mobile` e só então a camada do SIG é aplicada por cima.
-
-### 6. Voltar ao SIG Harness
-
-Toque em **Iniciar Harness**. O app envia a camada `dsh-web` (patches, plugins, addon nativo),
-aplica no DSH, sobe a bridge e abre a interface já autenticada.
-
-> Se o Termux continuar recusando o comando, use **Liberar o Termux (copiar)** na tela inicial.
-> Nas próximas aberturas nada é baixado de novo: o app só reaplica a camada quando o APK muda.
-## Se algo der errado
-
-| Sintoma | Causa | Correção |
-|---|---|---|
-| Termux mostra `RunCommandService requires 'allow-external-apps'` | o Termux não foi liberado para receber comandos | rode no Termux: `mkdir -p ~/.termux && echo 'allow-external-apps=true' >> ~/.termux/termux.properties && termux-reload-settings` |
-| `CANNOT LINK EXECUTABLE "node": cannot locate symbol …` | node novo sobre bibliotecas antigas do Termux | rode `pkg upgrade -y` e depois `pkg install -y nodejs npm` |
-| Comando falhou dentro do `su` | o shell de root tem `$HOME` e PATH diferentes | saia com `exit` e rode no shell comum do Termux |
-| App parado em “Procurando o harness…” | comando enviado, bridge não subiu | confira `~/.sig-harness/bootstrap.log` e `~/.sig-harness/provision.log` |
-| `No usable native binding found for node-addon-require-builtin` | `npm i` do DSH apagou o addon nativo | rode `bash dsh-web/apply.sh --auto` e tente de novo |
-| `TransactionTooLargeException: data parcel size` | APK antigo mandava o payload em base64 no Intent | instale o APK 1.3.14+ (versionCode 66) |
-| WebView `ERR_HTTP_RESPONSE_CODE_FAILURE` em `127.0.0.1` | cookies `dsh-auth-*` acumulados; host responde 431 | instale o APK 1.3.14+ e reabra o app |
-| Modo web não abre | addon, Binder ou cookies | siga `dsh-web/RUNBOOK.md` |
-
-A tela inicial tem dois atalhos de cópia: **Liberar o Termux (copiar)** e **Comando manual (copiar)**.
 ## Localização
 
 O código deste projeto fica em `/storage/emulated/0/Projetos/sig-harness`.
@@ -83,6 +50,8 @@ O mapa completo da migração está em `../README-MIGRACAO.md`.
 Build recomendado (o armazenamento compartilhado não executa scripts diretamente):
 
     bash ~/harness/build.sh
+
+Para gerar um APK sem assinatura, use `bash ~/harness/build.sh --unsigned`.
 
 
 ## Estrutura do repositório
@@ -94,10 +63,8 @@ Build recomendado (o armazenamento compartilhado não executa scripts diretament
 | `dsh-web/` | camada web do DSH: patches, plugin da aba Voz e profile — ver [dsh-web/README.md](dsh-web/README.md) |
 | `dist/` | APK gerado localmente (fora do Git) |
 
-As customizações da interface web **vão dentro do APK**: o `build.sh` empacota `dsh-web/` em
-`app/assets/dsh-web.tgz` e o bridge reaplica patches, plugin da aba Voz e addon nativo no Termux
-antes de subir o `dsh web`. Instalar um APK novo já basta — não há passo manual, nem depois de
-um `npm i -g @deepseek-ai/dsh`.
+As customizações e a ponte vão no APK em `app/assets/dsh-web.tgz`. O instalador verifica o SHA-256
+do pacote antes de executar os arquivos. As alterações feitas pelo npm são detectadas na abertura.
 
 O mesmo pacote serve para reaplicar à mão: `bash dsh-web/apply.sh`.
 

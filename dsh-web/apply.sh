@@ -17,13 +17,16 @@ PROFILE="${SIG_PROFILE_PATH:-$HOME/.dsh/profiles/${DSH_PROFILE:-web}}"
 # shellcheck disable=SC1091
 . "$HERE/pin.env"
 
-DRY=0; WITH_PROFILE=0; FORCE=0; AUTO=0
+DRY=0; WITH_PROFILE=0; FORCE=0; AUTO=0; CORE=0; CHECK=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY=1 ;;
     --profile) WITH_PROFILE=1 ;;
     --force) FORCE=1 ;;
     --auto) AUTO=1 ;;
+    --managed-core) CORE=1 ;;
+    --check) CHECK=1; DRY=1 ;;
+    --apply) ;;
     -h|--help) sed -n '3,11p' "$0"; exit 0 ;;
     *) echo "argumento desconhecido: $arg" >&2; [ "$AUTO" = 1 ] || exit 2 ;;
   esac
@@ -31,6 +34,16 @@ done
 
 status=0
 SKIP_PATCHES=0
+
+migrate_flock_errno() {
+  local file="$DSH/node_modules/@deepseek-ai/node-addon-system/lib/flock.js"
+  # Atualiza somente o resultado conhecido do patch 0004 anterior.
+  local checksum=5bbce4953d5cb4c8f9fbb9be31bdda69ca961618bce13104484014d9b33efbde
+  printf '%s  %s\n' "$checksum" "$file" | sha256sum -c --status 2>/dev/null || return 1
+  if [ "$DRY" = 0 ]; then
+    sed -i 's/getSystemErrorName(errno)/getSystemErrorName(-Math.abs(errno))/' "$file"
+  fi
+}
 
 if [ ! -d "$DSH/node_modules/@deepseek-ai" ]; then
   echo "DSH não encontrado em $DSH" >&2
@@ -59,14 +72,42 @@ if [ "$SKIP_PATCHES" = 0 ]; then
       continue
     fi
     if ! patch -p1 --dry-run -s -f -d "$DSH" < "$p" >/dev/null 2>&1; then
+      if [ "$name" = "0004-node-addon-flock-android-ffi.patch" ] && migrate_flock_errno; then
+        echo "migração      $name"
+        if [ "$CHECK" = 1 ]; then status=1; fi
+        continue
+      fi
       echo "não aplica    $name (base mudou: rode capture.sh)" >&2
       status=1
       continue
     fi
-    if [ "$DRY" = 1 ]; then echo "aplicaria     $name"; continue; fi
-    patch -p1 -s -d "$DSH" < "$p"
+    if [ "$DRY" = 1 ]; then
+      echo "aplicaria     $name"
+      if [ "$CHECK" = 1 ]; then status=1; fi
+      continue
+    fi
+    if ! patch -p1 -s -f -d "$DSH" < "$p"; then status=1; continue; fi
     echo "aplicado      $name"
   done
+fi
+
+# O app verifica os arquivos instalados e carrega os dois módulos no Node.
+# O modo manual abaixo continua funcionando fora do Android.
+if [ "$CORE" = 1 ]; then
+  [ "$status" = 0 ] || exit "$status"
+  install_native() {
+    local source="$HERE/artifacts/$1" target="$DSH/node_modules/$2"
+    [ -s "$source" ] || return 1
+    if cmp -s "$source" "$target"; then return 0; fi
+    [ "$CHECK" = 0 ] || return 1
+    mkdir -p "$(dirname "$target")" &&
+      install -m 755 "$source" "$target"
+  }
+  install_native require_builtin-napi-v9-android-arm64.node \
+    node-addon-require-builtin/build/napi/napi-v9-android-arm64/require_builtin.node || exit 1
+  install_native koffi-android-arm64.node koffi/build/koffi/android_arm64/koffi.node || exit 1
+  node --expose-internals "$HERE/tools/check-native.mjs" "$DSH"
+  exit $?
 fi
 
 if [ ! -d "$PROFILE" ]; then

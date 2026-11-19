@@ -198,3 +198,15 @@ export TMPDIR=/data/data/com.termux/files/usr/tmp
 - Logs: `~/.sig-harness/bridge.log`, `provision.log`, `bootstrap.log`
 - Payload em mídia: `/storage/emulated/0/Android/media/com.sig.harness/dsh-web.tgz`
 
+## Fluxo a partir da versão 1.4.0
+
+Em uma instalação nova, espere **Criando o perfil Web no DeepSeek Harness** e **Reparando o
+perfil e os plugins**. A primeira etapa usa `dsh --profile web --dump-default-config` para
+criar a base em segundo plano. A segunda instala o bundle móvel fixado, registra os plugins
+e completa os ajustes do SIG. Somente depois a interface é carregada com autenticação local.
+
+Em uma instalação existente, **Reparar instalação** verifica os mesmos itens e reinicia a ponte.
+O log da etapa fica em `~/.sig-harness/bootstrap.log`. Em um ambiente de teste isolado,
+retire um binário Android e um plugin da instalação, abra o app e confira que ambos foram
+restaurados. Em uma segunda abertura com a instalação íntegra, a ponte pode ser reutilizada.
+

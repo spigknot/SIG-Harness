@@ -1,5 +1,17 @@
 # Regressões — o que já quebrou e por quê
 
+## 1.4.0 — verificação e reparo antes do modo web
+
+- O bootstrap verifica a versão fixada do DSH, os patches e os binários ARM64. No
+  teste do `flock`, um descritor adquire o bloqueio e o segundo precisa receber
+  `EAGAIN` ou `EWOULDBLOCK`. O patch antigo passava o errno positivo para o Node
+  e a contenção gerava `ERR_OUT_OF_RANGE`.
+- Falha na instalação via npm dispara uma tentativa com prefixo e cache novos.
+  O pacote ativo só é substituído depois de verificar a cópia preparada.
+- A ponte só publica a porta depois de escutar nela. O app exige a resposta do
+  processo esperado. O host web entrega uma URL atual com o cookie
+  `dsh-auth-*` antes que o WebView abra a página.
+
 Registro cronológico. Cada linha evita que o mesmo erro volte.
 
 ## 2026-11-08

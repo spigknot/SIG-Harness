@@ -1,43 +1,50 @@
 package com.sig.harness;
 
+import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-/** Starts the SIG bridge inside Termux using Termux's RUN_COMMAND intent. */
+/** Sends the installer to Termux and receives its progress and final result. */
 public final class TermuxRunner {
-    /** Versão do DSH instalada no primeiro uso (espelha dsh-web/pin.env). */
-    static final String DSH_BOOTSTRAP_VERSION = "0.2.1-rc.5";
-
-    public static final String TERMUX_PACKAGE = "com.termux";
-    public static final String TERMUX_SERVICE = "com.termux.app.RunCommandService";
-    public static final String ACTION_RUN_COMMAND = "com.termux.RUN_COMMAND";
+    private static final String TERMUX_PACKAGE = "com.termux";
     public static final String PERMISSION = "com.termux.permission.RUN_COMMAND";
+    private static final String EXTRA = "com.termux.RUN_COMMAND_";
+    private static final Pattern READY = Pattern.compile("(?m)^SIG_READY ([0-9]{1,5}) ([0-9]{1,10})$");
 
-    /**
-     * O kernel limita cada argumento do execve a MAX_ARG_STRLEN (128 KB). O script já
-     * carrega o bridge em base64 (~77 KB), então o pacote dsh-web viaja em argumentos
-     * separados e é remontado no shell com \"$1$2...\".
-     */
-    private static final int PAYLOAD_CHUNK = 60000;
+    interface Listener {
+        void onProgress(String message);
+        void onReady(int port, int pid);
+        void onFailure(String message);
+    }
 
     private TermuxRunner() { }
 
-    public static boolean isTermuxInstalled(Context context) {
-        try {
-            context.getPackageManager().getPackageInfo(TERMUX_PACKAGE, 0);
-            return true;
-        } catch (PackageManager.NameNotFoundException e) {
-            return false;
-        }
-    }
+    public static boolean isTermuxInstalled(Context context) { return installed(context, TERMUX_PACKAGE); }
+    public static boolean isBootInstalled(Context context) { return installed(context, "com.termux.boot"); }
 
-    public static boolean isBootInstalled(Context context) {
+    private static boolean installed(Context context, String name) {
         try {
-            context.getPackageManager().getPackageInfo("com.termux.boot", 0);
+            context.getPackageManager().getPackageInfo(name, 0);
             return true;
         } catch (PackageManager.NameNotFoundException e) {
             return false;
@@ -48,115 +55,214 @@ public final class TermuxRunner {
         return context.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED;
     }
 
-    public static Intent bridgeIntent(String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64, String payloadPath) {
-        return bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64, payloadPath, false);
-    }
-
-    /**
-     * Reinício completo: derruba o dsh web em execução antes de subir a bridge de novo,
-     * para que os módulos editados em disco (patches, plugins) sejam carregados do zero.
-     */
-    public static void restartBridge(Context context, String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64, String payloadPath) {
-        context.startService(bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64, payloadPath, true));
-    }
-
-    public static Intent bridgeIntent(String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64, String payloadPath, boolean restart) {
-        List<String> chunks = splitPayload(payloadBase64);
-        // Camada dsh-web embutida no APK: despeja o pacote, extrai e reaplica as
-        // customizações do DSH (patches, plugin da aba Voz e addon nativo) antes do bridge.
-        String provision = "";
-        if (payloadPath != null && !payloadPath.isEmpty()) {
-            provision = "cp " + quote(payloadPath) + " \"$HOME/.sig-harness/dsh-web.tgz\" || exit 1; "
-                    + "rm -rf \"$HOME/.sig-harness/dsh-web\"; "
-                    + "tar xzf \"$HOME/.sig-harness/dsh-web.tgz\" -C \"$HOME/.sig-harness\" 2>/dev/null && "
-                    + "bash \"$HOME/.sig-harness/dsh-web/apply.sh\" --auto >> \"$HOME/.sig-harness/provision.log\" 2>&1; ";
-        } else if (!chunks.isEmpty()) {
-            provision = "printf '%s' " + chunkRefs(chunks.size()) + " | base64 -d > \"$HOME/.sig-harness/dsh-web.tgz\"; "
-                    + "rm -rf \"$HOME/.sig-harness/dsh-web\"; "
-                    + "tar xzf \"$HOME/.sig-harness/dsh-web.tgz\" -C \"$HOME/.sig-harness\" 2>/dev/null && "
-                    + "bash \"$HOME/.sig-harness/dsh-web/apply.sh\" --auto >> \"$HOME/.sig-harness/provision.log\" 2>&1; ";
-        }
-        // "pkill -f 'bin.js web'" casaria com este próprio shell (o texto do comando contém
-        // o padrão) e mataria o wrapper antes do exec. O caminho correto é encerrar a bridge,
-        // que é dona do processo web e o derruba no shutdown; o pid está em bridge.json.
-        String prefix = restart
-                ? "PID=$(grep -o '" + "\"pid\":[0-9]*" + "' \"$HOME/.sig-harness/bridge.json\" 2>/dev/null | grep -o '[0-9]*'); "
-                + "[ -n \"$PID\" ] && kill \"$PID\" 2>/dev/null; "
-                + "STRAY=$(pgrep -f 'expose-internals.*bin[.]js web' 2>/dev/null); [ -n \"$STRAY\" ] && kill $STRAY 2>/dev/null; "
-                + "sleep 2; "
-                : "";
-        String script = prefix + "export PATH=/data/data/com.termux/files/usr/bin:$PATH; "
-                + "mkdir -p \"$HOME/.sig-harness\"; "
-                // Primeiro uso num aparelho limpo: instala o que falta antes de seguir.
-                // Idempotente — em aparelho pronto os dois comandos só conferem o PATH.
-                + "BOOT=\"$HOME/.sig-harness/bootstrap.log\"; "
-                + "command -v node >/dev/null 2>&1 || { echo \"[bootstrap] node\" >> \"$BOOT\"; "
-                // upgrade antes: node novo sobre libc++ antigo falha com "cannot locate symbol"
-                + "yes | pkg update -y >> \"$BOOT\" 2>&1; yes | pkg upgrade -y >> \"$BOOT\" 2>&1; "
-                + "yes | pkg install -y nodejs npm >> \"$BOOT\" 2>&1; }; "
-                + "command -v dsh >/dev/null 2>&1 || { echo \"[bootstrap] dsh " + DSH_BOOTSTRAP_VERSION + "\" >> \"$BOOT\"; "
-                + "npm i -g @deepseek-ai/dsh@" + DSH_BOOTSTRAP_VERSION + " --ignore-scripts >> \"$BOOT\" 2>&1; }; "
-                + "printf '%s' '" + bridgeBase64 + "' | base64 -d > \"$HOME/.sig-harness/sig-bridge.mjs\"; "
-                + "if [ ! -f \"$HOME/.sig-harness/acp.patch.yml\" ]; then printf '%s' '" + patchBase64 + "' | base64 -d > \"$HOME/.sig-harness/acp.patch.yml\"; fi; "
-                + "chmod 700 \"$HOME/.sig-harness/sig-bridge.mjs\"; "
-                + provision
-                + "exec /data/data/com.termux/files/usr/bin/node \"$HOME/.sig-harness/sig-bridge.mjs\""
-                + " --daemon --port " + port
-                + " --token " + quote(token)
-                + " --cwd " + quote(cwd)
-                + " --permission-mode danger-full-access"
-                + " --log \"$HOME/.sig-harness/bridge.log\"";
-        List<String> args = new ArrayList<String>();
-        args.add("-lc");
-        args.add(script);
-        if (!chunks.isEmpty()) {
-            args.add("sig-payload");
-            args.addAll(chunks);
-        }
-        Intent intent = new Intent();
-        intent.setClassName(TERMUX_PACKAGE, TERMUX_SERVICE);
-        intent.setAction(ACTION_RUN_COMMAND);
-        intent.putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash");
-        intent.putExtra("com.termux.RUN_COMMAND_ARGUMENTS", args.toArray(new String[0]));
-        intent.putExtra("com.termux.RUN_COMMAND_WORKDIR", "/data/data/com.termux/files/home");
-        intent.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true);
-        intent.putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0");
-        intent.putExtra("com.termux.RUN_COMMAND_COMMAND_LABEL", "SIG Harness");
-        intent.putExtra("com.termux.RUN_COMMAND_COMMAND_DESCRIPTION", "Iniciar o SIG Harness");
-        return intent;
-    }
-
-    public static void startBridge(Context context, String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64, String payloadPath) {
-        context.startService(bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64, payloadPath));
-    }
-
     public static void openTermux(Context context) {
         Intent launch = context.getPackageManager().getLaunchIntentForPackage(TERMUX_PACKAGE);
-        if (launch != null) {
-            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            context.startActivity(launch);
+        if (launch != null) context.startActivity(launch);
+    }
+
+    static final class Installation {
+        private final Activity app;
+        private final Handler ui = new Handler(Looper.getMainLooper());
+        private final Listener listener;
+        private final String id = UUID.randomUUID().toString();
+        private final String action;
+        private File statusFile;
+        private PendingIntent resultIntent;
+        private boolean registered;
+        private boolean closed;
+        private String lastStep = "";
+        private final Runnable noProgress = this::showWaitingForTermux;
+        private final Runnable timedOut = () -> {
+            String detail = label(lastStep);
+            fail(detail == null ? "O Termux não devolveu o resultado da verificação."
+                    : "Tempo limite em «" + detail + "». Consulte ~/.sig-harness/bootstrap.log no Termux.");
+        };
+
+        Installation(Activity app, Listener listener) {
+            this.app = app;
+            this.listener = listener;
+            action = app.getPackageName() + ".INSTALL_RESULT." + id;
         }
-    }
 
-    private static List<String> splitPayload(String payload) {
-        List<String> out = new ArrayList<String>();
-        if (payload == null || payload.isEmpty()) return out;
-        for (int i = 0; i < payload.length(); i += PAYLOAD_CHUNK) {
-            out.add(payload.substring(i, Math.min(payload.length(), i + PAYLOAD_CHUNK)));
+        private void showWaitingForTermux() {
+            if (lastStep.isEmpty()) listener.onProgress("Aguardando resposta do Termux");
         }
-        return out;
-    }
 
-    /** Devolve \"$1$2$3\" — o shell concatena os blocos antes do base64 -d. */
-    private static String chunkRefs(int count) {
-        StringBuilder sb = new StringBuilder("\"");
-        for (int i = 1; i <= count; i++) sb.append('$').append(i);
-        sb.append('"');
-        return sb.toString();
-    }
+        void start(String mode, String token, String cwd, int port) {
+            new Thread(() -> {
+                try {
+                    File[] dirs = app.getExternalMediaDirs();
+                    if (dirs.length == 0 || dirs[0] == null || (!dirs[0].isDirectory() && !dirs[0].mkdirs())) {
+                        throw new IOException("Armazenamento compartilhado indisponível");
+                    }
+                    String script = new String(readAsset("bootstrap.sh"), StandardCharsets.UTF_8);
+                    byte[] payload = readAsset("dsh-web.tgz");
+                    String sha = hex(MessageDigest.getInstance("SHA-256").digest(payload));
+                    File folder = dirs[0];
+                    File file = new File(folder, "harness-" + sha + ".tgz");
+                    // Sempre regrava a partir do APK. O Termux faz outra verificação após copiar.
+                    File tmp = new File(folder, id + ".tmp");
+                    try {
+                        try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(payload); }
+                        if (!tmp.renameTo(file)) throw new IOException("Não foi possível compartilhar o pacote");
+                    } finally {
+                        tmp.delete();
+                    }
+                    File progress = new File(folder, id + ".status");
+                    if (!progress.createNewFile()) throw new IOException("Arquivo de progresso indisponível");
+                    ui.post(() -> send(script, file, sha, progress, mode, token, cwd, port, 0));
+                } catch (Exception e) {
+                    ui.post(() -> fail("Não foi possível preparar os arquivos de instalação. Confira o armazenamento do aparelho."));
+                }
+            }, "sig-install-assets").start();
+        }
 
-    private static String quote(String value) {
-        if (value == null) value = "";
-        return "'" + value.replace("'", "'\\''") + "'";
+        private void send(String script, File file, String sha, File status, String mode,
+                          String token, String cwd, int port, int attempt) {
+            if (closed) return;
+            if (!app.hasWindowFocus()) {
+                if (attempt >= 30) { fail("Volte ao SIG Harness e tente novamente para autorizar o comando."); return; }
+                ui.postDelayed(() -> send(script, file, sha, status, mode, token, cwd, port, attempt + 1), 300);
+                return;
+            }
+            statusFile = status;
+            try {
+                if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(receiver, new IntentFilter(action), Context.RECEIVER_NOT_EXPORTED);
+                else app.registerReceiver(receiver, new IntentFilter(action));
+                registered = true;
+                int flags = PendingIntent.FLAG_ONE_SHOT;
+                if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
+                resultIntent = PendingIntent.getBroadcast(app, 0, new Intent(action).setPackage(app.getPackageName()), flags);
+
+                Intent cmd = new Intent("com.termux.RUN_COMMAND");
+                cmd.setClassName(TERMUX_PACKAGE, "com.termux.app.RunCommandService");
+                cmd.putExtra(EXTRA + "PATH", "/data/data/com.termux/files/usr/bin/bash");
+                cmd.putExtra(EXTRA + "ARGUMENTS", new String[]{"-c", script, "sig-bootstrap",
+                        file.getAbsolutePath(), sha, status.getAbsolutePath(), mode, String.valueOf(port), token, cwd});
+                cmd.putExtra(EXTRA + "WORKDIR", "/data/data/com.termux/files/home");
+                cmd.putExtra(EXTRA + "BACKGROUND", true);
+                cmd.putExtra(EXTRA + "COMMAND_LABEL", "SIG Harness");
+                cmd.putExtra(EXTRA + "PENDING_INTENT", resultIntent);
+                if (app.startService(cmd) == null) throw new IllegalStateException("Serviço do Termux ausente");
+                ui.post(poll);
+                ui.postDelayed(noProgress, 45000L);
+                ui.postDelayed(timedOut, 50L * 60L * 1000L);
+            } catch (RuntimeException error) {
+                fail("O Android não conseguiu enviar o comando ao Termux. Abra o Termux uma vez e confira a permissão do SIG Harness.");
+            }
+        }
+
+        private byte[] readAsset(String name) throws IOException {
+            try (InputStream in = app.getAssets().open(name); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                byte[] buf = new byte[8192];
+                int count;
+                while ((count = in.read(buf)) != -1) out.write(buf, 0, count);
+                return out.toByteArray();
+            }
+        }
+
+        private static String hex(byte[] hash) {
+            StringBuilder out = new StringBuilder(hash.length * 2);
+            for (byte b : hash) out.append(String.format(java.util.Locale.ROOT, "%02x", b & 0xff));
+            return out.toString();
+        }
+
+        private final Runnable poll = new Runnable() {
+            @Override public void run() {
+                if (closed) return;
+                readProgress();
+                ui.postDelayed(this, 450);
+            }
+        };
+
+        private void readProgress() {
+            if (statusFile == null) return;
+            try (FileInputStream in = new FileInputStream(statusFile)) {
+                byte[] buf = new byte[64];
+                int count = in.read(buf);
+                if (count <= 0) return;
+                String step = new String(buf, 0, count, StandardCharsets.US_ASCII).trim();
+                String text = label(step);
+                if (text != null && !step.equals(lastStep)) {
+                    lastStep = step;
+                    listener.onProgress(text);
+                }
+            } catch (IOException ignored) { }
+        }
+
+        private final BroadcastReceiver receiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                if (closed || !action.equals(intent.getAction())) return;
+                // O resultado só vale após a conclusão do comando no Termux.
+                // Para Android anteriores ao 13, o identificador imprevisível também isola a operação.
+                Bundle result = intent.getBundleExtra("result");
+                if (result == null) { fail("O Termux não devolveu o resultado da verificação."); return; }
+                readProgress();
+                String out = result.getString("stdout", "");
+                Matcher ready = READY.matcher(out);
+                if (result.getInt("err", Activity.RESULT_OK) == Activity.RESULT_OK
+                        && result.getInt("exitCode", -1) == 0 && ready.find()) {
+                    try {
+                        int port = Integer.parseInt(ready.group(1));
+                        int pid = Integer.parseInt(ready.group(2));
+                        if (statusFile != null) statusFile.delete();
+                        close();
+                        listener.onReady(port, pid);
+                        return;
+                    } catch (NumberFormatException ignored) { }
+                }
+                Matcher failed = Pattern.compile("(?m)^SIG_FAILED ([a-z_]+)$").matcher(out);
+                if (failed.find() && label(failed.group(1)) != null) lastStep = failed.group(1);
+                String detail = label(lastStep);
+                if (detail == null) {
+                    fail("O Termux recusou o comando. Libere comandos externos no Termux e tente novamente.");
+                } else if ("environment".equals(lastStep)) {
+                    fail("Execute pelo Termux no Android ARM64 com a sessão comum do Termux.");
+                } else if ("lock".equals(lastStep)) {
+                    fail("Já existe uma verificação ou reparo em andamento. Aguarde e tente novamente.");
+                } else if ("assets".equals(lastStep)) {
+                    fail("O Termux não conseguiu ler ou validar o pacote do app. Confira o acesso aos arquivos do aparelho no Termux.");
+                } else {
+                    fail("Falha em «" + detail + "». Consulte ~/.sig-harness/bootstrap.log no Termux.");
+                }
+            }
+        };
+
+        private void fail(String message) {
+            if (closed) return;
+            if (statusFile != null) statusFile.delete();
+            close();
+            listener.onFailure(message);
+        }
+
+        void close() {
+            closed = true;
+            ui.removeCallbacksAndMessages(null);
+            if (registered) {
+                app.unregisterReceiver(receiver);
+                registered = false;
+            }
+            if (resultIntent != null) resultIntent.cancel();
+        }
+
+        private static String label(String step) {
+            switch (step) {
+                case "environment": return "Verificando o ambiente do Termux";
+                case "lock": return "Iniciando a verificação";
+                case "tools": return "Verificando ferramentas do Termux";
+                case "assets": return "Validando os arquivos do app";
+                case "node": return "Verificando Node.js e npm";
+                case "node_install": return "Corrigindo Node.js e npm";
+                case "pnpm": return "Preparando o instalador de plugins";
+                case "dsh": return "Verificando o DeepSeek Harness";
+                case "dsh_install": return "Instalando o DeepSeek Harness";
+                case "native": return "Restaurando patches e binários nativos";
+                case "profile": return "Verificando o perfil e os plugins";
+                case "profile_initialize": return "Criando o perfil Web no DeepSeek Harness";
+                case "profile_repair": return "Reparando o perfil e os plugins";
+                case "bridge": return "Preparando a conexão local";
+                default: return null;
+            }
+        }
     }
 }

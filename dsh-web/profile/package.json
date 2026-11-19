@@ -2,7 +2,7 @@
   "name": "dsh-profile-web",
   "private": true,
   "dependencies": {
-    "dsh-web-mobile": "github:mexiaosqwq/dsh-web-mobile"
+    "dsh-web-mobile": "github:mexiaosqwq/dsh-web-mobile#2cf9061adf27ab914af1a32a3b869b1c70592a75"
   },
   "dsh": {
     "profile": {

@@ -35,8 +35,8 @@ import java.util.List;
 /** Optional full web UI of the DSH, authenticated by the URL returned by the bridge. */
 public final class WebScreen {
     public interface Host {
-        void onBackToApp();
         void onRetry();
+        void onRepair();
         void onOpenChrome(String url);
         void onOpenSettings();
     }
@@ -44,6 +44,8 @@ public final class WebScreen {
     private final Context c;
     private final Host host;
     private final LinearLayout root;
+    private final LinearLayout header;
+    private int pageGeneration;
     private final WebView web;
     private final ProgressBar progress;
     private final FrameLayout frame;
@@ -52,6 +54,8 @@ public final class WebScreen {
     private final LinearLayout errorCard;
     private final TextView errorText;
     private String url;
+    private boolean destroyed;
+    private int loadGeneration;
     private ValueCallback<Uri[]> fileCallback;
     private String downloadHook;
     private String voiceHook;
@@ -92,6 +96,19 @@ public final class WebScreen {
         root = Ui.column(c);
         root.setBackgroundColor(Ui.BG);
 
+        header = Ui.row(c);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(Ui.dp(c, 12), 0, Ui.dp(c, 8), 0);
+        header.addView(Ui.text(c, "SIG Harness", 13f, Ui.TEXT_SOFT, Ui.MEDIUM),
+                Ui.lpWeight(0, -2, 1f));
+        TextView repair = Ui.text(c, "Reparar instalação", 13f, Ui.ACCENT, Ui.MEDIUM);
+        repair.setGravity(Gravity.CENTER);
+        repair.setPadding(Ui.dp(c, 10), 0, Ui.dp(c, 10), 0);
+        repair.setBackground(Ui.ripple(Color.TRANSPARENT, 8f, c));
+        repair.setOnClickListener(v -> host.onRepair());
+        header.addView(repair, new LinearLayout.LayoutParams(-2, Ui.dp(c, 48)));
+        root.addView(header);
+
         progress = new ProgressBar(c, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
         progress.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.ACCENT));
@@ -125,12 +142,17 @@ public final class WebScreen {
         if (voice != null) web.addJavascriptInterface(voice, "SigVoice");
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                String target = request.getUrl().toString();
-                if (target.startsWith("http://127.0.0.1") || target.startsWith("http://localhost")) return false;
-                host.onOpenChrome(target);
+                Uri target = request.getUrl();
+                Uri local = url == null ? Uri.EMPTY : Uri.parse(url);
+                if ("http".equals(target.getScheme()) && "127.0.0.1".equals(target.getHost())
+                        && target.getPort() == local.getPort()) return false;
+                if (request.isForMainFrame() && ("https".equals(target.getScheme()) || "http".equals(target.getScheme()))) {
+                    host.onOpenChrome(target.toString());
+                }
                 return true;
             }
             @Override public void onPageStarted(WebView view, String pageUrl, android.graphics.Bitmap favicon) {
+                pageGeneration++;
                 showWaiting(false);
                 hideError();
                 progress.setVisibility(View.VISIBLE);
@@ -140,9 +162,11 @@ public final class WebScreen {
                 installDownloadHook();
                 installVoiceHook();
                 installShellHook();
+                checkChatReady(pageGeneration, 60);
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request != null && request.isForMainFrame()) {
+                    pageGeneration++;
                     progress.setVisibility(View.GONE);
                     if (autoRetries++ < 2) { host.onRetry(); return; }
                     showError("Não foi possível carregar a interface web. " + (error == null ? "" : error.getDescription()));
@@ -150,6 +174,7 @@ public final class WebScreen {
             }
             @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
                 if (request != null && request.isForMainFrame()) {
+                    pageGeneration++;
                     progress.setVisibility(View.GONE);
                     if (autoRetries++ < 2) { host.onRetry(); return; }
                     int status = errorResponse == null ? 0 : errorResponse.getStatusCode();
@@ -254,31 +279,40 @@ public final class WebScreen {
         errorText.setPadding(0, Ui.dp(c, 10), 0, Ui.dp(c, 16));
         errorCard.addView(errorText);
         TextView retry = Ui.primaryButton(c, "Tentar novamente", new View.OnClickListener() {
-            @Override public void onClick(View v) { host.onRetry(); }
+            @Override public void onClick(View v) { autoRetries = 0; host.onRetry(); }
         });
         errorCard.addView(retry, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(c, 56)));
-        TextView chrome2 = Ui.ghostButton(c, "Abrir no Chrome", new View.OnClickListener() {
-            @Override public void onClick(View v) { if (url != null) host.onOpenChrome(url); }
-        });
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, Ui.dp(c, 52));
-        clp.topMargin = Ui.dp(c, 10);
-        errorCard.addView(chrome2, clp);
         errorCard.setVisibility(View.GONE);
         frame.addView(errorCard, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
     }
 
     public View view() { return root; }
 
+    private void checkChatReady(int generation, int attempts) {
+        if (destroyed || generation != pageGeneration || errorCard.getVisibility() == View.VISIBLE
+                || waiting.getVisibility() == View.VISIBLE || header.getVisibility() == View.GONE) return;
+        web.evaluateJavascript("!!document.querySelector('[data-composer-input]')", ready -> {
+            if (destroyed || generation != pageGeneration) return;
+            if ("true".equals(ready)) {
+                header.setVisibility(View.GONE);
+            } else if (attempts > 1) {
+                web.postDelayed(() -> checkChatReady(generation, attempts - 1), 500L);
+            }
+        });
+    }
+
     public void load(final String value) {
+        pageGeneration++;
+        final int generation = ++loadGeneration;
         this.url = value;
         hideError();
-        showWaiting(false);
         // O host troca de porta a cada start e o cookie é por autoridade (host:porta).
         // Sem limpar, o WebView acumula dezenas de cookies dsh-auth e o host responde
         // 431 Request Header Fields Too Large antes mesmo de validar o token.
         final CookieManager cookies = CookieManager.getInstance();
         cookies.removeAllCookies(new ValueCallback<Boolean>() {
             @Override public void onReceiveValue(Boolean ignored) {
+                if (destroyed || generation != loadGeneration) return;
                 cookies.flush();
                 web.loadUrl(value);
             }
@@ -288,10 +322,16 @@ public final class WebScreen {
     public void setWaiting(boolean visible, String text) {
         waitingText.setText(text == null ? "Iniciando a interface web…" : text);
         showWaiting(visible);
-        if (visible) errorCard.setVisibility(View.GONE);
+        if (visible) {
+            pageGeneration++;
+            header.setVisibility(View.VISIBLE);
+            errorCard.setVisibility(View.GONE);
+        }
     }
 
     public void showError(String message) {
+        pageGeneration++;
+        header.setVisibility(View.VISIBLE);
         errorText.setText(message == null ? "Erro desconhecido." : message);
         errorCard.setVisibility(View.VISIBLE);
         waiting.setVisibility(View.GONE);
@@ -314,6 +354,7 @@ public final class WebScreen {
     }
 
     public void destroy() {
+        destroyed = true;
         if (voice != null) voice.release();
         try { web.destroy(); } catch (Throwable ignored) { }
     }

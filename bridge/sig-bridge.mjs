@@ -10,6 +10,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { TailscaleWeb } from './tailscale-web.mjs';
 
 const PROTOCOL = 1;
 const HOME = process.env.HOME || '/data/data/com.termux/files/home';
@@ -26,11 +27,16 @@ function log(msg) {
   try { console.log(line); } catch {}
 }
 
+function shellQuote(value) {
+  return "'" + String(value).replaceAll("'", "'\\''") + "'";
+}
+
 function parseArgs(argv) {
   const o = {
     port: 43117,
     token: '',
     cwd: HOME,
+    revision: '',
     daemon: false,
     log: path.join(STATE_DIR, 'bridge.log'),
     profile: 'acp',
@@ -46,6 +52,7 @@ function parseArgs(argv) {
     const v = argv[++i];
     if (v === undefined) continue;
     if (a === '--port') o.port = parseInt(v, 10) || 43117;
+    else if (a === '--revision') o.revision = v;
     else if (a === '--token') o.token = v;
     else if (a === '--cwd') o.cwd = v;
     else if (a === '--log') o.log = v;
@@ -157,26 +164,6 @@ class AcpRuntime {
     this.cb.onState(state, this.detail);
   }
 
-  /**
-   * Reaplica a camada dsh-web a cada start do bridge: o perfil só existe depois do
-   * primeiro boot do dsh, então o provisionamento feito pelo app pode ter chegado antes.
-   * apply.sh é idempotente e roda em segundo plano.
-   */
-  converge() {
-    try {
-      const base = process.env.HOME || process.cwd();
-      const script = path.join(base, '.sig-harness', 'dsh-web', 'apply.sh');
-      if (!existsSync(script)) return;
-      const out = openSync(path.join(base, '.sig-harness', 'provision.log'), 'a');
-      const child = spawn('/data/data/com.termux/files/usr/bin/bash', [script, '--auto'], {
-        detached: true, stdio: ['ignore', out, out]
-      });
-      child.unref();
-      log('[bootstrap] apply.sh --auto disparado');
-    } catch (err) {
-      log('[bootstrap] converge falhou: ' + (err && err.message));
-    }
-  }
   async start() {
     if (this.state === 'ready') return;
     if (this.startPromise) return this.startPromise;
@@ -360,6 +347,9 @@ class Bridge {
     this.webOwned = false;
     this.webPort = 0;
     this.webStarting = null;
+    this.remote = new TailscaleWeb();
+    this.remoteEnabled = false;
+    this.remoteWork = Promise.resolve();
     this.webStderr = [];
     this.startingHarness = false;
     this.shuttingDown = false;
@@ -424,7 +414,7 @@ class Bridge {
         this.lastClientAt = Date.now();
         log('[net] client authenticated from ' + socket.remoteAddress + '; clients=' + this.clients.size);
         this.send(client, this.welcome());
-        if (this.runtime.state === 'stopped') {
+        if (msg.mode !== 'web' && this.runtime.state === 'stopped') {
           this.startHarness().catch((err) => log('[harness] start failed: ' + (err && err.message)));
         }
         return;
@@ -450,7 +440,7 @@ class Bridge {
       pid: process.pid,
       port: this.port,
       home: HOME,
-      version: '1.3.2',
+      version: '1.5.0',
       state: this.runtime.state,
       detail: this.runtime.detail,
       model: this.conf.model || null,
@@ -548,7 +538,7 @@ class Bridge {
     const lines = [
       '#!/data/data/com.termux/files/usr/bin/bash',
       '# SIG Harness: sobe o harness no boot (Termux:Boot).',
-      'export HOME=' + HOME,
+      'export HOME=' + shellQuote(HOME),
       'export PATH=/data/data/com.termux/files/usr/bin:$PATH',
       'LOG="$HOME/.sig-harness/boot.log"',
       'mkdir -p "$HOME/.sig-harness"',
@@ -556,25 +546,15 @@ class Bridge {
       'if [ -n "$CODE" ] && [ "$CODE" != "000" ]; then echo "$(date) bridge em execucao" >> "$LOG"; exit 0; fi',
       '[ -f "$HOME/.sig-harness/sig-bridge.mjs" ] || { echo "$(date) bridge ausente" >> "$LOG"; exit 0; }',
       'echo "$(date) iniciando SIG Harness" >> "$LOG"',
-      'exec ' + node + ' "$HOME/.sig-harness/sig-bridge.mjs" --daemon --port ' + this.port + ' --token "' + String(this.conf.token) + '" --cwd "' + cwd + '" --permission-mode ' + this.conf.permissionMode + ' --idle-minutes 0 --log "$HOME/.sig-harness/bridge.log"',
+      'exec ' + node + ' "$HOME/.sig-harness/sig-bridge.mjs" --daemon --port ' + this.port
+        + ' --token ' + shellQuote(this.conf.token) + ' --cwd ' + shellQuote(cwd)
+        + ' --revision ' + shellQuote(this.conf.revision)
+        + ' --permission-mode ' + shellQuote(this.conf.permissionMode) + ' --idle-minutes 0 --log "$HOME/.sig-harness/bridge.log"',
     ];
     writeFileSync(file, lines.join('\n') + '\n', { mode: 0o700 });
     try { chmodSync(file, 0o700); } catch {}
     log('[boot] script ' + file);
     return { enabled: true, path: file, port: this.port, cwd };
-  }
-
-  existingWeb() {
-    let text = '';
-    try { text = readFileSync(path.join(HOME, 'dsh-web.log'), 'utf8'); } catch { return []; }
-    const urls = [];
-    for (const line of text.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('dsh web: ')) continue;
-      const url = trimmed.slice('dsh web: '.length).trim();
-      if (url.startsWith('http://127.0.0.1:') && url.indexOf('/?token=') >= 0) urls.push(url);
-    }
-    return urls;
   }
 
   validateUrl(url) {
@@ -585,106 +565,51 @@ class Bridge {
       const finish = (value) => { if (!done) { done = true; resolve(value); } };
       const req = http.get({ hostname: parsed.hostname, port: parsed.port, path: parsed.pathname + parsed.search, timeout: 5000 }, (res) => {
         res.resume();
-        finish(res.statusCode === 303 || res.statusCode === 302 || res.statusCode === 200);
+        const cookie = res.headers['set-cookie'] || [];
+        finish((res.statusCode === 303 || res.statusCode === 302)
+          && cookie.some(value => value.startsWith('dsh-auth-')));
       });
       req.on('timeout', () => { req.destroy(); finish(false); });
       req.on('error', () => finish(false));
     });
   }
 
-  tcpOpen(host, port) {
-    return new Promise((resolve) => {
-      const socket = net.connect(Number(port), host);
-      const done = (value) => { try { socket.destroy(); } catch {} resolve(value); };
-      socket.setTimeout(1500);
-      socket.once('connect', () => done(true));
-      socket.once('timeout', () => done(false));
-      socket.once('error', () => done(false));
-    });
-  }
-
-  /**
-   * Reaplica a camada dsh-web (patches, plugins, addon nativo e koffi) antes de
-   * subir o host web. Um `npm i -g` do DSH apaga esses arquivos; sem isso o
-   * processo morre com "No usable native binding found".
-   */
-  async ensureWebLayer() {
-    const script = path.join(STATE_DIR, 'dsh-web', 'apply.sh');
-    if (!existsSync(script)) return { ok: true, skipped: true };
-    let out = '';
-    const code = await new Promise((resolve) => {
-      let settled = false;
-      let timer = null;
-      let child = null;
-      const finish = (value) => {
-        if (settled) return;
-        settled = true;
-        if (timer) clearTimeout(timer);
-        resolve(value);
-      };
-      const collect = (buf) => {
-        out += String(buf);
-        if (out.length > 4000) out = out.slice(-4000);
-      };
-      timer = setTimeout(() => {
-        try { if (child) child.kill('SIGKILL'); } catch {}
-        out += '\ntimeout';
-        finish(-1);
-      }, 45000);
-      try {
-        child = spawn('/data/data/com.termux/files/usr/bin/bash', [script, '--auto'], {
-          cwd: HOME,
-          env: process.env,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-      } catch (err) {
-        out += '\n' + err.message;
-        finish(-1);
-        return;
+  syncRemote() {
+    this.remoteWork = this.remoteWork.catch(() => {}).then(async () => {
+      if (!this.remoteEnabled || !this.webUrl) {
+        this.remote.close();
+        return { enabled: this.remoteEnabled };
       }
-      child.stdout.on('data', collect);
-      child.stderr.on('data', collect);
-      child.on('error', (err) => { out += '\n' + err.message; finish(-1); });
-      child.on('exit', (value) => finish(value === null ? -1 : value));
+      try {
+        return { enabled: true, ...await this.remote.open(this.webUrl) };
+      } catch {
+        this.remote.close();
+        return { enabled: true, unavailable: 'O acesso pelo Tailscale não pôde ser iniciado.' };
+      }
     });
-    if (code !== 0) {
-      log('[layer] apply.sh falhou (' + code + '): ' + clip(out.trim(), 500));
-      return { ok: false, detail: out.trim() };
-    }
-    log('[layer] apply.sh ok');
-    return { ok: true };
+    return this.remoteWork;
   }
 
-  async webStart() {
-    if (this.webChild && this.webUrl) {
-      if (await this.validateUrl(this.webUrl)) return { url: this.webUrl, owned: this.webOwned, port: this.webPort };
-      log('[web] cached URL failed validation; restarting host');
-      await this.webStop();
-    }
+  webRemote(params) {
+    if (typeof params.enabled === 'boolean') this.remoteEnabled = params.enabled;
+    return this.syncRemote();
+  }
+
+  async webStart(params = {}) {
+    if (typeof params.remoteAccess === 'boolean') this.remoteEnabled = params.remoteAccess;
     if (this.webStarting) return this.webStarting;
     this.webStarting = (async () => {
-      await this.stopHarness();
-      const candidates = this.existingWeb();
-      for (let i = candidates.length - 1; i >= 0; i--) {
-        const url = candidates[i];
-        let parsed;
-        try { parsed = new URL(url); } catch { continue; }
-        if (!await this.tcpOpen(parsed.hostname, parsed.port)) continue;
-        if (!await this.validateUrl(url)) {
-          throw new BridgeError('web_stale', 'Ha um dsh web rodando, mas o link de autenticacao esta desatualizado. Reinicie o dsh web no Termux.');
+      if (this.webChild && this.webUrl) {
+        if (await this.validateUrl(this.webUrl) && this.webChild && this.webUrl) {
+          const remote = await this.syncRemote();
+          return { url: this.webUrl, owned: true, port: this.webPort, remote };
         }
-        this.webUrl = url;
-        this.webOwned = false;
-        this.webPort = Number(parsed.port) || 0;
-        log('[web] attached to running server on port ' + this.webPort);
-        return { url, owned: false, port: this.webPort };
+        await this.webStop();
       }
-      const layer = await this.ensureWebLayer();
-      if (!layer.ok) {
-        throw new BridgeError('layer_failed', 'A camada dsh-web nao pode ser aplicada: ' + clip(layer.detail || 'erro desconhecido', 300));
-      }
+      if (this.shuttingDown) throw new BridgeError('web_failed', 'A ponte está encerrando.');
+      await this.stopHarness();
       const bin = resolveDshBin();
-      if (!bin) throw new BridgeError('dsh_not_found', 'DSH nao encontrado no Termux.');
+      if (!bin) throw new BridgeError('web_dependency', 'O executável do DSH não foi encontrado.');
       this.webStderr = [];
       const env = Object.assign({}, process.env, { DSH_PERMISSION_MODE: this.conf.permissionMode });
       // cwd inexistente (aparelho novo) mata o spawn sem stderr: cai para o HOME do Termux.
@@ -696,67 +621,78 @@ class Bridge {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       this.webChild = child;
+      this.webOwned = true;
       let found = null;
-      const scan = (chunk) => {
-        for (const line of String(chunk).split('\n')) {
-          const at = line.indexOf('dsh web: ');
-          if (at < 0) continue;
-          const candidate = line.slice(at + 'dsh web: '.length).trim();
-          if (candidate.startsWith('http://127.0.0.1:') && candidate.indexOf('/?token=') >= 0) found = candidate;
-        }
-      };
-      child.stdout.on('data', scan);
+      const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
+      lines.on('line', line => {
+        const at = line.indexOf('dsh web: ');
+        if (at < 0) return;
+        try {
+          const candidate = new URL(line.slice(at + 'dsh web: '.length).trim());
+          if (candidate.protocol === 'http:' && candidate.hostname === '127.0.0.1'
+              && candidate.port && !candidate.username && !candidate.password
+              && candidate.pathname === '/' && candidate.searchParams.get('token')) {
+            found = candidate.toString();
+          }
+        } catch {}
+      });
       child.stderr.on('data', (buf) => {
         for (const line of String(buf).split('\n')) {
           if (!line.trim()) continue;
-          this.webStderr.push(line);
+          const safe = line.replace(/([?&]token=)[^\s&#]+/gi, '$1[redacted]');
+          this.webStderr.push(safe);
           if (this.webStderr.length > 40) this.webStderr.shift();
-          log('[web:err] ' + clip(line, 300));
+          log('[web:err] ' + clip(safe, 300));
         }
       });
       let spawnFailure = null;
       child.on('error', (err) => { spawnFailure = err; log('[web] spawn error: ' + err.message); });
-      const deadline = Date.now() + 60000;
-      while (!found && Date.now() < deadline) {
-        if (child.exitCode !== null || spawnFailure !== null) break;
-        await new Promise((r) => setTimeout(r, 250));
-      }
-      if (!found) {
-        try { child.kill('SIGKILL'); } catch {}
-        this.webChild = null;
-        const tail = this.webStderr.slice(-8).join(' ');
-        const motivo = spawnFailure !== null ? spawnFailure.message : tail;
-        const clean = String(motivo || '').replace(/\s+/g, ' ').trim();
-        if (clean.includes('No usable native binding')) {
-          throw new BridgeError('web_failed', 'O addon nativo do DSH esta ausente. Rode no Termux: bash ~/.sig-harness/dsh-web/apply.sh --auto');
-        }
-        throw new BridgeError('web_failed', 'O servidor web nao iniciou. ' + clip(clean, 300));
-      }
-      this.webUrl = found;
-      this.webOwned = true;
-      try { this.webPort = Number(new URL(found).port) || 0; } catch { this.webPort = 0; }
-      child.on('exit', () => {
+      let exited = false;
+      child.once('exit', () => {
+        exited = true;
         if (this.webChild === child) {
           this.webChild = null;
           this.webUrl = null;
           this.webOwned = false;
           this.webPort = 0;
+          this.remote.close();
         }
       });
+      const deadline = Date.now() + 60000;
+      while (!found && !exited && !spawnFailure && this.webChild === child && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      if (!found || exited || !await this.validateUrl(found) || this.webChild !== child) {
+        if (this.webChild === child) {
+          this.webOwned = true;
+          await this.webStop();
+        }
+        const tail = this.webStderr.slice(-8).join(' ');
+        const clean = String(spawnFailure?.message || tail).replace(/\s+/g, ' ').trim();
+        if (/No usable native binding|Cannot find the native Koffi module|ERR_MODULE_NOT_FOUND|Cannot find module/.test(clean)) {
+          throw new BridgeError('web_dependency', 'Uma dependência do DSH não carregou. Use Reparar instalação.');
+        }
+        throw new BridgeError('web_failed', 'O servidor web não abriu ou não aceitou a autenticação. ' + clip(clean, 300));
+      }
+      this.webUrl = found;
+      this.webOwned = true;
+      this.webPort = Number(new URL(found).port);
       log('[web] started on port ' + this.webPort);
-      return { url: found, owned: true, port: this.webPort };
+      const remote = await this.syncRemote();
+      return { url: found, owned: true, port: this.webPort, remote };
     })().finally(() => { this.webStarting = null; });
     return this.webStarting;
   }
 
   async webStop() {
+    this.remote.close();
     const child = this.webChild;
     const owned = this.webOwned;
     this.webChild = null;
     this.webUrl = null;
     this.webOwned = false;
     this.webPort = 0;
-    if (child && owned) {
+    if (child && owned && child.exitCode === null && child.signalCode === null) {
       try { child.kill('SIGTERM'); } catch {}
       await new Promise((resolve) => {
         const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} resolve(); }, 4000);
@@ -792,7 +728,8 @@ class Bridge {
       case 'session.rename': return this.renameSession(params);
       case 'permission.answer': return this.answerPermission(params);
       case 'boot.configure': return this.bootConfigure(params);
-      case 'web.start': return this.webStart();
+      case 'web.start': return this.webStart(params);
+      case 'web.remote': return this.webRemote(params);
       case 'web.stop': return this.webStop();
       case 'web.status': return this.webStatus();
       case 'bridge.shutdown': setTimeout(() => this.shutdown('requested').catch(() => {}), 120); return { ok: true };
@@ -1463,7 +1400,10 @@ class Bridge {
     try { await this.runtime.stop(); } catch {}
     try { this.server.close(); } catch {}
     for (const client of this.clients) { try { client.socket.destroy(); } catch {} }
-    try { writeFileSync(path.join(STATE_DIR, 'bridge.json'), JSON.stringify({ stoppedAt: Date.now() })); } catch {}
+    try {
+      const file = path.join(STATE_DIR, 'bridge.json');
+      if (JSON.parse(readFileSync(file, 'utf8')).pid === process.pid) unlinkSync(file);
+    } catch {}
     process.exit(0);
   }
 }
@@ -1473,11 +1413,15 @@ await bridge.listen();
 setInterval(() => {
   if (bridge.shuttingDown) return;
   if (opts.autoStart || opts.idleMinutes <= 0) return;
+  if (bridge.remote.state().address) return;
   const idleFor = Date.now() - bridge.lastClientAt;
   if (bridge.clients.size === 0 && bridge.activePrompts.size === 0 && idleFor > opts.idleMinutes * 60 * 1000) {
     bridge.shutdown('idle').catch(() => {});
   }
 }, 60000).unref();
+setInterval(() => {
+  if (!bridge.shuttingDown && bridge.remoteEnabled && bridge.webUrl) bridge.syncRemote();
+}, 15000).unref();
 setInterval(() => {
   if (bridge.shuttingDown) return;
   const now = Date.now();

@@ -32,12 +32,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,7 +49,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private static final int SCREEN_CHAT = 3;
     private static final int SCREEN_SETTINGS = 4;
     private static final int SCREEN_WEB = 5;
-    private static final String BRIDGE_VERSION = "1.3.2";
+    private static final String BRIDGE_VERSION = "1.5.0";
 
     private Prefs prefs;
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -76,21 +72,13 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private int screen = SCREEN_NONE;
 
     private boolean startFlow;
-    private boolean polling;
-    private boolean scanning;
-    private boolean pendingStartPermission;
     private boolean finishing;
-    private long pollDeadline;
-    /** O primeiro uso instala node e DSH (pkg upgrade): minutos, não segundos. */
-    private static final long START_TIMEOUT_MS = 20L * 60L * 1000L;
-    private long pollStartedAt;
+    private boolean resumeAfterSetup;
+    private String pendingLaunchMode;
+    private TermuxRunner.Installation installation;
+    private boolean recoveredThisLaunch;
     private boolean refreshScheduled;
     private boolean runtimeWasReady;
-    private String bridgeBase64;
-    private String patchBase64;
-    private String payloadBase64;
-    private String payloadFilePath;
-    private boolean restartingWeb;
 
     private View permissionOverlay;
     private JSONObject permissionData;
@@ -100,62 +88,20 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private View modelSheet;
     private final List<JSONObject> permissionQueue = new ArrayList<>();
 
-    /** Revalida o Termux ao voltar do navegador: instalar por fora não deve exigir reabrir o app. */
-    private boolean resumed;
-    private int foregroundTries;
-
-    /** Roda a ação só com a activity em primeiro plano (Android 12+ barra serviço em background). */
-    private int termuxAttempts;
-
-    /**
-     * Envia o comando ao Termux com as duas proteções: a activity precisa estar em foco e,
-     * se o Android recusar por background, tenta de novo em vez de falhar na hora.
-     */
-    private void dispatchTermuxCommand(final boolean restart) {
-        if (!resumed || !hasWindowFocus()) {
-            if (termuxAttempts++ > 20) { termuxAttempts = 0; failStart("Não foi possível falar com o Termux", "A tela precisa estar em primeiro plano para enviar o comando."); return; }
-            ui.postDelayed(new Runnable() { @Override public void run() { dispatchTermuxCommand(restart); } }, 300);
-            return;
-        }
-        try {
-            String payloadPath = payloadFile();
-            String payload = payloadPath.isEmpty() ? assetBase64OrEmpty("dsh-web.tgz") : "";
-            if (restart) {
-                TermuxRunner.restartBridge(this, prefs.token(), prefs.cwd(), prefs.basePort(),
-                        assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), payload, payloadPath);
-            } else {
-                TermuxRunner.startBridge(this, prefs.token(), prefs.cwd(), prefs.basePort(),
-                        assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), payload, payloadPath);
-            }
-            termuxAttempts = 0;
-        } catch (Throwable error) {
-            String name = error.getClass().getName();
-            if (name.contains("BackgroundServiceStartNotAllowed") && termuxAttempts++ < 10) {
-                ui.postDelayed(new Runnable() { @Override public void run() { dispatchTermuxCommand(restart); } }, 600);
-                return;
-            }
-            termuxAttempts = 0;
-            failStart("Não foi possível falar com o Termux", String.valueOf(error));
-        }
-    }
-    private void whenForeground(final Runnable action) {
-        if (resumed) { action.run(); return; }
-        if (foregroundTries++ > 20) { foregroundTries = 0; return; }
-        ui.postDelayed(new Runnable() {
-            @Override public void run() { whenForeground(action); }
-        }, 250);
-    }
-
     @Override protected void onResume() {
-        resumed = true;
-        foregroundTries = 0;
         super.onResume();
         if (startScreen != null) startScreen.setTermuxInstalled(TermuxRunner.isTermuxInstalled(this));
+        if (resumeAfterSetup && screen == SCREEN_START && TermuxRunner.isTermuxInstalled(this)) {
+            resumeAfterSetup = false;
+            ui.post(() -> launchHarness("check"));
+        } else if (screen == SCREEN_WEB && bridge == null && !startFlow) {
+            ui.post(() -> launchHarness("check"));
+        }
     }
 
-    @Override protected void onPause() {
-        super.onPause();
-        resumed = false;
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (Intent.ACTION_MAIN.equals(intent.getAction())) ui.post(() -> launchHarness("check"));
     }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -177,9 +123,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         setContentView(root);
 
         showStart();
-        ui.postDelayed(new Runnable() {
-            @Override public void run() { checkExistingBridge(false); }
-        }, 250);
+        ui.post(() -> launchHarness("check"));
     }
 
     private TextView buildBanner() {
@@ -215,117 +159,9 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         startScreen.setTermuxInstalled(TermuxRunner.isTermuxInstalled(this));
         screen = SCREEN_START;
         setScreen(startScreen.view());
-        if (bridge == null && !startFlow) {
-            startScreen.resetSteps();
+        if (!startFlow) {
             startScreen.setBusy(false);
             startScreen.setStatus("Harness parado", Ui.TEXT_SOFT);
-        }
-    }
-
-    private String assetBase64(String name) {
-        if ("sig-bridge.mjs".equals(name) && bridgeBase64 != null) return bridgeBase64;
-        if ("acp.patch.yml".equals(name) && patchBase64 != null) return patchBase64;
-        if ("dsh-web.tgz".equals(name) && payloadBase64 != null) return payloadBase64;
-        try {
-            InputStream in = getAssets().open(name);
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) > 0) out.write(buffer, 0, read);
-            in.close();
-            String encoded = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
-            if ("sig-bridge.mjs".equals(name)) bridgeBase64 = encoded;
-            else if ("acp.patch.yml".equals(name)) patchBase64 = encoded;
-            else if ("dsh-web.tgz".equals(name)) payloadBase64 = encoded;
-            return encoded;
-        } catch (Exception e) {
-            throw new IllegalStateException("Bridge embutido não encontrado: " + name, e);
-        }
-    }
-
-    /** Reads an asset that may be absent in older builds, without breaking the launch. */
-    private String assetBase64OrEmpty(String name) {
-        try {
-            return assetBase64(name);
-        } catch (RuntimeException e) {
-            return "";
-        }
-    }
-
-
-    /** SHA-256 do asset cru — usado para saber se o payload no cartão mudou. */
-    private String assetHash(String name) {
-        InputStream in = null;
-        try {
-            in = getAssets().open(name);
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) > 0) digest.update(buffer, 0, read);
-            byte[] bytes = digest.digest();
-            StringBuilder out = new StringBuilder(bytes.length * 2);
-            for (byte b : bytes) out.append(String.format("%02x", b));
-            return out.toString();
-        } catch (Throwable error) {
-            return "";
-        } finally {
-            if (in != null) { try { in.close(); } catch (Exception ignored) { } }
-        }
-    }
-
-    /**
-     * O Intent do Termux não pode passar de ~1 MB (limite do Binder). O tgz com o
-     * koffi passa disso, então o app grava o pacote em Android/media/<pacote>/ e
-     * envia só o caminho; o Termux (All Files Access) copia de lá.
-     */
-    private String payloadFile() {
-        if (payloadFilePath != null && !payloadFilePath.isEmpty()) {
-            File cached = new File(payloadFilePath);
-            if (cached.exists()) return payloadFilePath;
-        }
-        FileOutputStream out = null;
-        InputStream in = null;
-        FileOutputStream stampOut = null;
-        try {
-            File[] dirs = getExternalMediaDirs();
-            if (dirs == null || dirs.length == 0 || dirs[0] == null) return "";
-            File dir = dirs[0];
-            if (!dir.exists() && !dir.mkdirs()) return "";
-            String want = assetHash("dsh-web.tgz");
-            if (want.isEmpty()) return "";
-            File file = new File(dir, "dsh-web.tgz");
-            File stamp = new File(dir, "dsh-web.sha256");
-            String have = "";
-            if (stamp.exists()) {
-                FileInputStream stampIn = new FileInputStream(stamp);
-                byte[] buffer = new byte[128];
-                int read = stampIn.read(buffer);
-                stampIn.close();
-                if (read > 0) have = new String(buffer, 0, read, "UTF-8").trim();
-            }
-            if (!file.exists() || !want.equals(have)) {
-                in = getAssets().open("dsh-web.tgz");
-                out = new FileOutputStream(file);
-                byte[] buffer = new byte[8192];
-                int read;
-                while ((read = in.read(buffer)) > 0) out.write(buffer, 0, read);
-                out.close();
-                out = null;
-                in.close();
-                in = null;
-                stampOut = new FileOutputStream(stamp);
-                stampOut.write(want.getBytes("UTF-8"));
-                stampOut.close();
-                stampOut = null;
-            }
-            payloadFilePath = file.getAbsolutePath();
-            return payloadFilePath;
-        } catch (Throwable error) {
-            return "";
-        } finally {
-            try { if (out != null) out.close(); } catch (Exception ignored) { }
-            try { if (in != null) in.close(); } catch (Exception ignored) { }
-            try { if (stampOut != null) stampOut.close(); } catch (Exception ignored) { }
         }
     }
 
@@ -389,14 +225,15 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     // ---------------------------------------------------------------- start screen host
 
     private final StartScreen.Host startHost = new StartScreen.Host() {
-        @Override public void onStart() { startHarnessFlow(); }
-        @Override public void onConnectExisting() { checkExistingBridge(true); }
-        @Override public void onOpenTermux() { TermuxRunner.openTermux(MainActivity.this); }
-        @Override public void onInstallTermux() { openInstallPage(); }
-        @Override public void onOpenSettings() { showVoiceSettings(); }
-        @Override public void onCopyBootstrap() { copyBootstrapCommand(); }
+        @Override public void onStart() { launchHarness("check"); }
+        @Override public void onRepair() { launchHarness("repair"); }
+        @Override public void onOpenTermux() {
+            resumeAfterSetup = true;
+            TermuxRunner.openTermux(MainActivity.this);
+        }
+        @Override public void onInstallTermux() { resumeAfterSetup = true; openInstallPage(); }
         @Override public void onCopyTermuxSetup() { copyTermuxSetup(); }
-        @Override public void onCopyGuide(int step) { copyGuideStep(step); }
+        @Override public void onOpenSettings() { resumeAfterSetup = true; openAppSettings(); }
     };
 
     private void openInstallPage() {
@@ -595,87 +432,9 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
 
     // ---------------------------------------------------------------- connection
 
-    private BridgeClient probeBridge() {
-        int base = prefs.basePort();
-        List<Integer> ports = new ArrayList<Integer>();
-        int last = prefs.lastPort();
-        if (last >= base && last < base + 16) ports.add(last);
-        for (int i = 0; i < 16; i++) {
-            int p = base + i;
-            if (!ports.contains(p)) ports.add(p);
-        }
-        for (int i = 0; i < ports.size(); i++) {
-            if (finishing) return null;
-            try {
-                return BridgeClient.connect("127.0.0.1", ports.get(i), prefs.token(), 700);
-            } catch (Exception ignored) { }
-        }
-        return null;
-    }
-
-    private void checkExistingBridge(final boolean userInitiated) {
-        if (bridge != null) {
-            if (userInitiated) doStartWeb();
-            return;
-        }
-        if (userInitiated && startScreen != null) {
-            startScreen.setStatus("Procurando o harness…", Ui.TEXT_SOFT);
-        }
-        new Thread(new Runnable() {
-            @Override public void run() {
-                final BridgeClient found = probeBridge();
-                ui.post(new Runnable() {
-                    @Override public void run() {
-                        if (found != null) {
-                            adoptBridge(found, false);
-                            return;
-                        }
-                        if (startScreen != null && !startFlow) startScreen.setStatus("Harness parado", Ui.TEXT_SOFT);
-                        if (userInitiated) {
-                            toast("O harness não está rodando.");
-                            showStart();
-                        } else {
-                            startHarnessFlow();
-                        }
-                    }
-                });
-            }
-        }, "sig-probe").start();
-    }
-
-    /** Comandos do guia manual, na ordem em que devem ser executados no Termux. */
-    private void copyGuideStep(int step) {
-        String version = TermuxRunner.DSH_BOOTSTRAP_VERSION;
-        String command;
-        String toast;
-        switch (step) {
-            case 1:
-                command = "mkdir -p ~/.termux && echo 'allow-external-apps=true' >> ~/.termux/termux.properties && termux-reload-settings";
-                toast = "Passo 1 copiado — cole no Termux (fora do su).";
-                break;
-            case 2:
-                command = "pkg update -y && pkg upgrade -y && pkg install -y nodejs npm";
-                toast = "Passo 2 copiado — pode demorar alguns minutos.";
-                break;
-            case 3:
-                command = "npm i -g @deepseek-ai/dsh@" + version + " --ignore-scripts";
-                toast = "Passo 3 copiado — instala o DSH.";
-                break;
-            default:
-                command = "dsh plugin --profile web install";
-                toast = "Passo 4 copiado — cria o perfil e instala os bundles.";
-                break;
-        }
-        android.content.ClipboardManager clipboard =
-                (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
-        if (clipboard == null) { toast(command); return; }
-        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("SIG Harness", command));
-        toast(toast);
-    }
-
     /** Liberação do Termux, para colar quando o RUN_COMMAND é recusado. */
     private void copyTermuxSetup() {
-        String command = "mkdir -p ~/.termux && echo 'allow-external-apps=true' >> ~/.termux/termux.properties && termux-reload-settings";
+        String command = "mkdir -p ~/.termux && touch ~/.termux/termux.properties && sed -i '/^[[:space:]]*allow-external-apps[[:space:]]*=/d' ~/.termux/termux.properties && echo 'allow-external-apps=true' >> ~/.termux/termux.properties && termux-reload-settings";
         android.content.ClipboardManager clipboard =
                 (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
         if (clipboard == null) { toast("Comando: " + command); return; }
@@ -683,244 +442,139 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         toast("Copiado — cole no Termux (fora do su) e depois recarregue o Termux.");
     }
 
-    /** Alternativa quando o Termux não aceita RUN_COMMAND: comando para colar no Termux. */
-    private void copyBootstrapCommand() {
-        String command = "pkg update -y && pkg upgrade -y && pkg install -y nodejs npm"
-                + " && npm i -g @deepseek-ai/dsh@" + TermuxRunner.DSH_BOOTSTRAP_VERSION + " --ignore-scripts"
-                + " && echo 'pronto: volte ao SIG Harness e toque em Iniciar Harness'";
-        android.content.ClipboardManager clipboard =
-                (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
-        if (clipboard == null) { toast("Comando: " + command); return; }
-        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("SIG Harness", command));
-        toast("Comando copiado — cole no Termux e execute.");
-    }
-
-    private void startHarnessFlow() {
-        if (startFlow) return;
-        // APK novo = pacote dsh-web novo: provisiona e reinicia o host antes de tudo,
-        // senão a interface continua servindo os módulos da versão anterior.
-        String hash = assetHash("dsh-web.tgz");
-        if (!hash.isEmpty() && !hash.equals(prefs.appliedPayload()) && TermuxRunner.isTermuxInstalled(this) && TermuxRunner.hasPermission(this)) {
-            prefs.setAppliedPayload(hash);
-            startFlow = true;
-            doRestartHarness();
-            startFlow = false;
-            return;
-        }
-        if (bridge != null) {
-            doStartWeb();
-            return;
-        }
+    private void launchHarness(String mode) {
+        if (startFlow || finishing) return;
+        recoveredThisLaunch = false;
+        startFlow = true;
+        showStart();
         if (!TermuxRunner.isTermuxInstalled(this)) {
-            showStart();
-            startScreen.showError("Termux não encontrado", "O SIG Harness usa o Termux para executar o DSH. Instale o Termux (F-Droid ou GitHub) e toque em Iniciar Harness de novo.");
+            failStart("Instale o Termux", "O SIG Harness usa o Termux para executar o DeepSeek Harness.");
             return;
         }
+
+        startScreen.setBusy(true);
         if (!TermuxRunner.hasPermission(this)) {
-            pendingStartPermission = true;
-            showStart();
-            startScreen.setBusy(true);
-            startScreen.resetSteps();
-            startScreen.setStatus("Permissão do Termux necessária", Ui.AMBER);
-            startScreen.setStep(0, 1, "pedindo permissão");
+            pendingLaunchMode = mode;
+            startScreen.setStatus("Aguardando permissão do Termux…", Ui.TEXT_SOFT);
             requestPermissions(new String[]{TermuxRunner.PERMISSION}, REQ_TERMUX);
             return;
         }
-        showStart();
-        beginLaunch();
+        beginLaunch(mode);
     }
 
-    private void beginLaunch() {
-        startFlow = true;
-        pendingStartPermission = false;
-        startScreen.resetSteps();
-        startScreen.setBusy(true);
-        startScreen.hideError();
-        startScreen.setStatus("Iniciando o harness…", Ui.TEXT_SOFT);
-        startScreen.setStep(0, 1, "enviando comando ao Termux");
-        dispatchTermuxCommand(false);
-        startScreen.setStep(0, 2, "comando enviado");
-        startScreen.setStep(1, 1, "instalando o que faltar");
-        startScreen.setStep(2, 1, "aguardando o bridge");
-        toast("Iniciando o SIG Harness…");
-        polling = true;
-        pollStartedAt = System.currentTimeMillis();
-        pollDeadline = pollStartedAt + START_TIMEOUT_MS;
-        ui.post(pollRunnable);
-    }
-
-    private final Runnable pollRunnable = new Runnable() {
-        @Override public void run() {
-            if (!polling || finishing) return;
-            if (bridge != null) { polling = false; return; }
-            long waited = System.currentTimeMillis() - pollStartedAt;
-            if (waited > 60000L && waited < 64000L && startScreen != null) {
-                startScreen.setStatus("Instalando pacotes no Termux — pode levar alguns minutos…", Ui.TEXT_SOFT);
-                startScreen.setStep(0, 2, "comando enviado");
-                startScreen.setStep(1, 1, "instalando pacotes (pkg upgrade)");
-            } else if (waited > 300000L && waited < 304000L && startScreen != null) {
-                startScreen.setStatus("Ainda instalando — conexão lenta aumenta o tempo", Ui.TEXT_SOFT);
-            }
-            if (System.currentTimeMillis() > pollDeadline) {
-                failStart("O harness não respondeu",
-                        "O bridge não subiu em 20 minutos. O primeiro uso instala node e DSH no Termux; se ainda estiver baixando, toque em Tentar novamente. Causas comuns:\n"
-                        + "1) Termux sem allow-external-apps — use Liberar o Termux (copiar);\n"
-                        + "2) node quebrado no Termux: se aparecer CANNOT LINK EXECUTABLE, rode pkg upgrade -y e depois pkg install -y nodejs npm;\n"
-                        + "3) comando colado dentro do su — saia com exit e repita.\n"
-                        + "Logs: ~/.sig-harness/bootstrap.log e provision.log.");
-                return;
-            }
-            if (!scanning) {
-                scanning = true;
-                new Thread(new Runnable() {
-                    @Override public void run() {
-                        final BridgeClient found = probeBridge();
-                        ui.post(new Runnable() {
-                            @Override public void run() {
-                                scanning = false;
-                                if (found != null && !finishing) adoptBridge(found, true);
-                            }
-                        });
-                    }
-                }, "sig-poll").start();
-            }
-            ui.postDelayed(this, 420);
-        }
-    };
-
-    private void adoptBridge(final BridgeClient client, boolean fromStart) {
-        if (finishing) { client.close(); return; }
-        if (bridge != null && bridge != client) bridge.close();
-        JSONObject welcome = client.welcome();
-        String version = welcome == null ? "" : welcome.optString("version", "");
-        if (!BRIDGE_VERSION.equals(version)) {
+    private void beginLaunch(String mode) {
+        webStartGeneration++;
+        webStarting = false;
+        if (bridge != null) {
+            bridge.setListener(null);
+            bridge.close();
             bridge = null;
-            startFlow = false;
-            JSONObject shutdown = new JSONObject();
-            client.request("bridge.shutdown", shutdown, new BridgeClient.Callback() {
-                @Override public void onResult(JSONObject result) { }
-                @Override public void onError(String code, String message) { }
-            });
-            toast("Atualizando o bridge do SIG Harness…");
-            ui.postDelayed(new Runnable() {
-                @Override public void run() {
-                    client.close();
-                    doRestartHarness();
-                }
-            }, 300);
+        }
+        // O WebView anterior pode ter uma navegação ou callback de cookies pendente.
+        if (webScreen != null) {
+            webScreen.destroy();
+            webScreen = null;
+        }
+        showStart();
+        startScreen.setBusy(true);
+        startScreen.setStatus("repair".equals(mode) ? "Iniciando reparo…" : "Verificando instalação…", Ui.TEXT_SOFT);
+        installation = new TermuxRunner.Installation(this, new TermuxRunner.Listener() {
+            @Override public void onProgress(String message) {
+                startScreen.setStatus(message + "…", Ui.TEXT_SOFT);
+            }
+
+            @Override public void onReady(int port, int pid) {
+                installation = null;
+                startScreen.setStatus("Conectando ao Harness…", Ui.TEXT_SOFT);
+                connectCheckedBridge(port, pid);
+            }
+
+            @Override public void onFailure(String message) {
+                installation = null;
+                failStart("Não foi possível abrir o Harness", message);
+            }
+        });
+        installation.start(mode, prefs.token(), prefs.cwd(), prefs.basePort());
+    }
+
+    private void connectCheckedBridge(int port, int pid) {
+        if (port < prefs.basePort() || port >= prefs.basePort() + 12 || pid <= 1) {
+            failStart("Conexão local indisponível", "O Termux retornou um endereço de conexão inválido.");
             return;
         }
-        bridge = client;
-        client.setListener(this);
-        if (welcome != null) {
-            bridgePort = welcome.optInt("port", prefs.basePort());
-            bridgePid = welcome.optInt("pid", 0);
-            runtimeState = welcome.optString("state", "stopped");
-        } else {
-            bridgePort = prefs.basePort();
-        }
-        prefs.setLastPort(bridgePort);
-        configureBoot();
-        if (startScreen != null) {
-            startScreen.setStep(1, 2, "pronto");
-        startScreen.setStep(2, 2, "conectado");
-            startScreen.setStep(3, 2, "token aceito");
-            startScreen.setStatus("Conectado · autenticando", Ui.TEXT_SOFT);
-        }
-        updateBanner();
-        if (sessionsScreen != null) sessionsScreen.setOnline(true, "Harness online");
-        if (chatScreen != null) chatScreen.setConnection(true, null);
-        if (startScreen != null) {
-            startScreen.setBusy(true);
-            startScreen.setStep(3, 2, "token aceito");
-            startScreen.setStep(4, 1, "abrindo interface web");
-            startScreen.setStatus("Abrindo a interface web…", Ui.TEXT_SOFT);
-        }
-        doStartWeb();
+        final String token = prefs.token();
+        new Thread(() -> {
+            BridgeClient found = null;
+            try {
+                found = BridgeClient.connect("127.0.0.1", port, token, 3000);
+            } catch (Exception ignored) { }
+            final BridgeClient client = found;
+            ui.post(() -> {
+                if (finishing || !startFlow) {
+                    if (client != null) client.close();
+                    return;
+                }
+                JSONObject welcome = client == null ? null : client.welcome();
+                if (welcome == null || welcome.optInt("pid") != pid
+                        || !BRIDGE_VERSION.equals(welcome.optString("version"))) {
+                    if (client != null) client.close();
+                    if (!recoveredThisLaunch) {
+                        recoveredThisLaunch = true;
+                        beginLaunch("restart");
+                    } else {
+                        failStart("Conexão local indisponível", "A ponte do Harness não respondeu após reiniciar.");
+                    }
+                    return;
+                }
+                bridge = client;
+                bridge.setListener(this);
+                bridgePort = port;
+                bridgePid = pid;
+                runtimeState = welcome.optString("state", "stopped");
+                configureBoot();
+                doStartWeb();
+            });
+        }, "sig-connect").start();
     }
 
     private void failStart(String title, String detail) {
         startFlow = false;
-        polling = false;
-        scanning = false;
+        pendingLaunchMode = null;
         showStart();
-        if (startScreen != null) {
-            startScreen.setBusy(false);
-            startScreen.showError(title, detail);
-            startScreen.setErrorRetryLabel("Tentar novamente");
-        }
+        startScreen.showError(title, detail);
     }
 
     private void onRuntimeReady() {
         runtimeState = "ready";
         boolean first = !runtimeWasReady;
         runtimeWasReady = true;
-        polling = false;
-        startFlow = false;
-        if (startScreen != null) {
-            startScreen.setStep(4, 2, "pronto");
-            startScreen.setStatus("Harness pronto", Ui.GREEN);
-            startScreen.setBusy(false);
-        }
         updateBanner();
         if (sessionsScreen != null) sessionsScreen.setOnline(true, "Harness online");
         if (chatScreen != null) chatScreen.setConnection(true, null);
-        if (restartingWeb) {
-            restartingWeb = false;
-            doStartWeb();
-            return;
-        }
-        if (screen != SCREEN_WEB) doStartWeb();
-        if (first) toast("Harness online.");
+        if (first && screen != SCREEN_WEB) toast("Harness online.");
     }
 
     @Override public void restartHarness() {
-        ui.post(new Runnable() {
-            @Override public void run() { doRestartHarness(); }
+        ui.post(() -> launchHarness("restart"));
+    }
+
+    @Override public void requestInstallationRepair() {
+        ui.post(() -> {
+            if (!finishing && !startFlow && webScreen != null) confirmRepair();
         });
     }
 
-    /** Mata o dsh web em execução, reenvia o comando ao Termux e recarrega a interface. */
-    /** SHA-256 do base64 do pacote embutido — muda a cada build que altere dsh-web/. */
-    private String payloadHash(String payload) {
-        if (payload == null || payload.isEmpty()) return "";
-        try {
-            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest(payload.getBytes("UTF-8"));
-            StringBuilder out = new StringBuilder(bytes.length * 2);
-            for (byte b : bytes) out.append(String.format("%02x", b));
-            return out.toString();
-        } catch (Throwable error) {
-            return "";
-        }
-    }
-
-    private void doRestartHarness() {
-        restartingWeb = true;
-        polling = false;
-        scanning = false;
-        if (bridge != null) { try { bridge.close(); } catch (Throwable ignored) { } }
-        bridge = null;
-        runtimeState = "stopped";
-        runtimeWasReady = false;
-        if (webScreen != null) webScreen.setWaiting(true, "Reiniciando o harness…");
-        try {
-            dispatchTermuxCommand(true);
-        } catch (Throwable error) {
-            restartingWeb = false;
-            toast("Não foi possível reiniciar: " + error);
-            return;
-        }
-        polling = true;
-        pollDeadline = System.currentTimeMillis() + START_TIMEOUT_MS;
-        // O processo antigo precisa sair antes da primeira varredura, senão a ponte
-        // morta ainda responde e devolve a URL expirada.
-        ui.postDelayed(pollRunnable, 2500L);
+    private void confirmRepair() {
+        new AlertDialog.Builder(this)
+                .setTitle("Reparar instalação?")
+                .setMessage("O Harness será reiniciado após a verificação. Aguarde as tarefas em andamento antes de continuar.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Reparar", (dialog, which) -> launchHarness("repair"))
+                .show();
     }
 
     private void reconnect() {
-        if (bridge != null) return;
-        checkExistingBridge(true);
+        if (bridge == null) launchHarness("check");
     }
 
     private void onBridgeLost(String reason) {
@@ -934,6 +588,8 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         if (screen == SCREEN_START && startScreen != null) {
             startScreen.setBusy(false);
             startScreen.setStatus("Harness parado", Ui.TEXT_SOFT);
+        } else if (screen == SCREEN_WEB && webScreen != null && !webStarting) {
+            webScreen.showError("A conexão local foi encerrada. Toque em Tentar novamente para verificar a instalação.");
         }
     }
 
@@ -1061,10 +717,6 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         runtimeState = welcome.optString("state", runtimeState);
         bridgePort = welcome.optInt("port", bridgePort);
         bridgePid = welcome.optInt("pid", bridgePid);
-        if (startScreen != null) {
-            startScreen.setStep(2, 2, "conectado");
-            startScreen.setStep(3, 2, "token aceito");
-        }
         if ("ready".equals(runtimeState)) onRuntimeReady();
     }
 
@@ -1074,20 +726,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             String state = data.optString("state", "");
             String detail = data.optString("detail", "");
             runtimeState = state;
-            if (startScreen != null) {
-                if ("starting".equals(state)) {
-                    startScreen.setStep(4, 1, detail);
-                    startScreen.setStatus("Iniciando o runtime…", Ui.TEXT_SOFT);
-                    startScreen.setBusy(true);
-                } else if ("error".equals(state)) {
-                    startScreen.setStep(4, 3, detail);
-                    startScreen.setStatus("O runtime falhou", Ui.RED);
-                    startScreen.setLog(detail);
-                }
-            }
             if ("ready".equals(state)) onRuntimeReady();
-        } else if ("harness.log".equals(event)) {
-            if (startScreen != null) startScreen.setLog(data.optString("line", ""));
         } else if ("sessions.changed".equals(event)) {
             scheduleSessionsRefresh();
         } else if ("session.update".equals(event)) {
@@ -1366,7 +1005,6 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         bridge = null;
         runtimeState = "stopped";
         runtimeWasReady = false;
-        polling = false;
         startFlow = false;
         keepScreenOn(false);
         chatScreen = null;
@@ -1450,9 +1088,10 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     }
 
     private void doStartWeb() {
-        if (bridge == null) { toast("O harness não está conectado."); return; }
+        if (webStarting) return;
+        if (bridge == null) { launchHarness("check"); return; }
         if (webScreen == null) webScreen = new WebScreen(this, webHost);
-        webScreen.setWaiting(true, "Iniciando a interface web…");
+        webScreen.setWaiting(true, "Iniciando e autenticando a interface web…");
         screen = SCREEN_WEB;
         setScreen(webScreen.view());
         webStarting = true;
@@ -1463,10 +1102,12 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         if (bridge == null) { webStarting = false; return; }
         final int generation = ++webStartGeneration;
         JSONObject params = new JSONObject();
+        try { params.put("remoteAccess", true); } catch (org.json.JSONException ignored) { }
         bridge.request("web.start", params, new BridgeClient.Callback() {
             @Override public void onResult(JSONObject result) {
                 if (generation != webStartGeneration) return;
                 webStarting = false;
+                startFlow = false;
                 String url = result == null ? "" : result.optString("url", "");
                 if (webScreen == null) return;
                 if (url.isEmpty()) {
@@ -1478,6 +1119,12 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             @Override public void onError(String code, String message) {
                 if (generation != webStartGeneration) return;
                 webStarting = false;
+                if (startFlow && !recoveredThisLaunch && "web_dependency".equals(code)) {
+                    recoveredThisLaunch = true;
+                    beginLaunch("recover");
+                    return;
+                }
+                startFlow = false;
                 if (webScreen != null) webScreen.showError(friendlyError(message));
             }
         }, 90000L);
@@ -1492,8 +1139,8 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     }
 
     private final WebScreen.Host webHost = new WebScreen.Host() {
-        @Override public void onBackToApp() { moveTaskToBack(true); }
         @Override public void onRetry() { doStartWeb(); }
+        @Override public void onRepair() { if (!startFlow) confirmRepair(); }
         @Override public void onOpenChrome(String url) { openChrome(url); }
         @Override public void onOpenSettings() { showVoiceSettings(); }
     };
@@ -1910,16 +1557,13 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         boolean granted = TermuxRunner.hasPermission(this);
         if (granted) {
             if (settingsScreen != null) settingsScreen.setPermission(true);
-            if (pendingStartPermission) {
-                pendingStartPermission = false;
-                beginLaunch();
+            if (pendingLaunchMode != null) {
+                String mode = pendingLaunchMode;
+                pendingLaunchMode = null;
+                beginLaunch(mode);
             }
         } else {
-            pendingStartPermission = false;
-            if (startScreen != null) {
-                startScreen.setBusy(false);
-                startScreen.showError("Permissão do Termux necessária", "O Android precisa autorizar o SIG a executar comandos no Termux. Abra Ajustes do app e conceda \"Executar comandos no Termux\".");
-            }
+            failStart("Permissão do Termux necessária", "Conceda «Executar comandos no Termux» nas permissões do SIG Harness.");
             if (settingsScreen != null) settingsScreen.setPermission(false);
         }
     }
@@ -1949,12 +1593,12 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     @Override protected void onDestroy() {
         stopStt();
         finishing = true;
-        polling = false;
-        scanning = false;
         ui.removeCallbacksAndMessages(null);
         webStartGeneration++;
         if (webScreen != null) { webScreen.destroy(); webScreen = null; }
-        if (isFinishing() && bridge != null) {
+        if (installation != null) installation.close();
+        if (bridge != null) {
+            bridge.setListener(null);
             bridge.close();
             bridge = null;
         }

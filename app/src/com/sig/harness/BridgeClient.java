@@ -133,6 +133,7 @@ public final class BridgeClient {
             hello.put("token", token);
             hello.put("client", "sig-harness-android");
             hello.put("version", "1");
+            hello.put("mode", "web");
         } catch (Exception ignored) { }
         writeLine(hello.toString());
     }

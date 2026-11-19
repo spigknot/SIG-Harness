@@ -85,7 +85,7 @@
 +    // flock 失败返回 -1，具体原因在 errno 里
 +    let errno = 0;
 +    try { errno = koffi.errno(); } catch { errno = 0; }
-+    const code = errno === 0 ? 'EIO' : getSystemErrorName(errno);
++    const code = errno === 0 ? 'EIO' : getSystemErrorName(-Math.abs(errno));
      throw Object.assign(new Error(`${code}: flock failed`), {
          code,
          errno,

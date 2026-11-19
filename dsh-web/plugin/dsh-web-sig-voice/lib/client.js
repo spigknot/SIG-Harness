@@ -195,6 +195,20 @@ window.__ModuleLoader__.load({
       });
     }
 
+    function RepairButton() {
+      const app = window.SigApp;
+      if (!app || typeof app.requestInstallationRepair !== "function") return null;
+      return jsx.jsx("button", {
+        type: "button",
+        onClick: () => app.requestInstallationRepair(),
+        style: {
+          marginTop: "18px", border: "1px solid " + LINE, background: "transparent",
+          color: TEXT, borderRadius: "9px", padding: "8px 14px", cursor: "pointer"
+        },
+        children: "Reparar instalação"
+      });
+    }
+
     const inject = ["slots"];
 
     function apply(ctx) {
@@ -203,6 +217,11 @@ window.__ModuleLoader__.load({
         id: "sig-voice",
         order: 90
       }, VoiceBlock));
+      ctx.slots.inject("settings.models.footer", () => ctx.slots.register({
+        name: "settings.models.footer",
+        id: "sig-repair",
+        order: 100
+      }, RepairButton));
     }
 
     exports.apply = apply;

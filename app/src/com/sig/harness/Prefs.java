@@ -52,25 +52,8 @@ public final class Prefs {
         sp.edit().putString("cwd", value == null ? "" : value.trim()).apply();
     }
 
-    /** Hash do último pacote dsh-web aplicado no Termux, para detectar APK novo. */
-    public String appliedPayload() {
-        return sp.getString("appliedPayload", "");
-    }
-
-    public void setAppliedPayload(String value) {
-        sp.edit().putString("appliedPayload", value == null ? "" : value).apply();
-    }
-
     public int basePort() {
         return 43117;
-    }
-
-    public int lastPort() {
-        return sp.getInt("lastPort", 0);
-    }
-
-    public void setLastPort(int port) {
-        sp.edit().putInt("lastPort", port).apply();
     }
 
     public String lastSessionId() {
