@@ -34,7 +34,7 @@ node /data/data/com.termux/files/usr/lib/node_modules/@deepseek-ai/dsh/lib/bin.j
 dumpsys package com.sig.harness | grep -E "versionCode|versionName"
 ```
 
-Referência da release atual: app **1.5.2 / versionCode 70**, bridge **1.5.0** e DSH **0.2.1-rc.5**. Node.js, npm e pnpm são verificados pelo bootstrap.
+Referência da release atual: app **1.5.5 / versionCode 73**, bridge **1.5.0** e DSH **0.2.1-rc.5**. Node.js, npm e pnpm são verificados pelo bootstrap.
 
 ---
 

@@ -3,7 +3,7 @@
  * Apoio ao tools/release.sh: manifesto, release e conferência.
  * O token vem de GH_TOKEN (nunca é impresso).
  *
- *   node tools/release-api.mjs version            -> "1.5.2 70"
+ *   node tools/release-api.mjs version            -> "1.5.5 73"
  *   node tools/release-api.mjs bump [--dry-run]   -> incrementa versionCode e versionName
  *   node tools/release-api.mjs publish <tag>      -> cria a release e envia o APK
  *   node tools/release-api.mjs verify <tag> <apk> -> confere download público
@@ -62,7 +62,7 @@ async function publish(tag) {
       tag_name: tag,
       name: `SIG Harness ${version}`,
       target_commitish: 'main',
-      body: `APK autossuficiente: aplica patches, plugins, perfil e addon nativo no boot.\n\nversionName ${version}`
+      body: `## SIG Harness ${version}\n\nO app verifica e prepara o DSH no Termux a cada abertura e carrega sua interface web autenticada dentro do SIG Harness.\n\n- As opções **Reparar instalação** e **Iniciar DSH ao ligar** ficam no fim da aba **General** das configurações do DSH.\n- O início no boot usa o Termux:Boot e funciona sem abrir o SIG Harness.\n- Com o Tailscale conectado, o DSH fica acessível pela porta fixa **3080**. O acesso segue as regras da tailnet.\n- A instalação da atualização preserva os dados do app.`
     })
   });
   const assetName = `SIG-Harness-${version}.apk`;

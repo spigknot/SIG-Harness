@@ -2,7 +2,7 @@
 
 O SIG Harness é o app Android que instala, verifica e abre o DeepSeek Harness (DSH) no Termux. Ele carrega a interface web do DSH dentro do próprio app, autentica a sessão automaticamente e aplica as personalizações do SIG.
 
-A versão atual é **1.5.2**. [Baixe o APK na página de releases](https://github.com/spigknot/SIG-Harness/releases/latest).
+A versão atual é **1.5.5**. [Baixe o APK na página de releases](https://github.com/spigknot/SIG-Harness/releases/latest).
 
 ## Primeira configuração
 
@@ -17,7 +17,7 @@ A cada abertura, o app verifica o ambiente do Termux, Node.js, npm, pnpm, a vers
 
 O perfil web é criado antes da aplicação dos ajustes do SIG. Isso permite que a interface do DSH inicialize corretamente e receba as personalizações na ordem esperada.
 
-O botão **Reparar instalação** fica disponível durante a configuração e em caso de falha. Depois que o chat abrir, ele fica no fim da primeira aba das configurações do DSH. O reparo verifica os componentes individualmente, reinstala o que estiver ausente ou inválido e reinicia o serviço.
+O botão **Reparar instalação** fica disponível durante a configuração e em caso de falha. Depois que o chat abrir, **Reparar instalação** fica no fim da aba **General** das configurações do DSH. O reparo verifica os componentes individualmente, reinstala o que estiver ausente ou inválido e reinicia o serviço.
 
 Para investigar uma falha, consulte **~/.sig-harness/bootstrap.log** e **~/.sig-harness/bridge.log** no Termux. O [runbook](dsh-web/RUNBOOK.md) reúne os sintomas conhecidos e os passos de diagnóstico.
 
@@ -26,6 +26,10 @@ Para investigar uma falha, consulte **~/.sig-harness/bootstrap.log** e **~/.sig-
 Com o Tailscale conectado no OnePlus, o app libera automaticamente a porta fixa **3080**. Em um navegador conectado à mesma tailnet, abra **http://IP-Tailscale-do-OnePlus:3080**. A porta encaminha para o DSH ativo, mesmo quando a porta interna dele muda.
 
 O acesso é controlado pelas regras da sua tailnet. Não é necessário configurar encaminhamento de portas no roteador.
+
+## Iniciar o DSH ao ligar o aparelho
+
+Na aba **General** das configurações do DSH, ative **Iniciar DSH ao ligar**. O SIG Harness cria uma tarefa no Termux:Boot para iniciar o DSH sem abrir o app. Instale o Termux:Boot, abra-o uma vez e depois ative a opção. Quando o Tailscale conectar, o acesso remoto ficará disponível na porta **3080**.
 
 ## O que o APK inclui
 
