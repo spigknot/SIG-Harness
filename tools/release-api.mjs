@@ -3,7 +3,7 @@
  * Apoio ao tools/release.sh: manifesto, release e conferência.
  * O token vem de GH_TOKEN (nunca é impresso).
  *
- *   node tools/release-api.mjs version            -> "1.3.3 33"
+ *   node tools/release-api.mjs version            -> "1.5.2 70"
  *   node tools/release-api.mjs bump [--dry-run]   -> incrementa versionCode e versionName
  *   node tools/release-api.mjs publish <tag>      -> cria a release e envia o APK
  *   node tools/release-api.mjs verify <tag> <apk> -> confere download público

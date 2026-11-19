@@ -38,7 +38,7 @@ Em `app/AndroidManifest.xml`:
 
 - `android:versionCode` **sempre** +1 (o Android exige para aceitar a atualização;
   também é o que faz o app detectar payload novo);
-- `android:versionName` no padrão `1.3.N`.
+- `android:versionName` no padrão `1.5.N`.
 
 **Pronto quando:** os dois campos conferem com a versão a publicar.
 

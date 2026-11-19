@@ -34,8 +34,7 @@ node /data/data/com.termux/files/usr/lib/node_modules/@deepseek-ai/dsh/lib/bin.j
 dumpsys package com.sig.harness | grep -E "versionCode|versionName"
 ```
 
-Referência atual: app **1.3.14 / versionCode 66**, bridge **1.3.2**, DSH
-**0.2.1-rc.5**, Node **26.13.0**, npm **12.2.3**.
+Referência da release atual: app **1.5.2 / versionCode 70**, bridge **1.5.0** e DSH **0.2.1-rc.5**. Node.js, npm e pnpm são verificados pelo bootstrap.
 
 ---
 
@@ -79,7 +78,7 @@ ls -l "$D/node_modules/koffi/build/koffi/android_arm64/koffi.node"
 
 Esperado: 245832 e 1140176 bytes.
 
-No app 1.3.14+ o bridge roda esse `apply.sh` sozinho antes de cada
+No app 1.5.2+ o bridge roda esse `apply.sh` sozinho antes de cada
 `web.start` (log `[layer] apply.sh ok`).
 
 ---
@@ -93,7 +92,7 @@ No app 1.3.14+ o bridge roda esse `apply.sh` sozinho antes de cada
 `Intent` do Termux. O Binder limita a transação a ~1 MB; strings em Parcel são
 UTF-16 e dobram o tamanho.
 
-**Correção:** atualizar para o APK **1.3.14+**. Ele grava o pacote em:
+**Correção:** atualizar para o APK **1.5.2+**. Ele grava o pacote em:
 
 ```text
 /storage/emulated/0/Android/media/com.sig.harness/dsh-web.tgz
@@ -127,7 +126,7 @@ por porta; com ~70 cookies o header `Cookie` passava de 16 KB, o Node
 respondia `431 Request Header Fields Too Large`, e o WebView mostrava o erro
 como falha de resposta HTTP.
 
-**Correção:** APK **1.3.14+**. O `WebScreen.load()` chama
+**Correção:** APK **1.5.2+**. O `WebScreen.load()` chama
 `CookieManager.removeAllCookies()` antes de carregar o URL novo; sobra só o
 cookie da porta atual. Se o app estiver preso na página antiga, force a parada
 e abra de novo:
@@ -154,7 +153,7 @@ Rode sempre:
 bash ~/.sig-harness/dsh-web/apply.sh --auto
 ```
 
-O `npm i` apaga patches e o addon. O bridge 1.3.2 repete isso antes do
+O `npm i` apaga patches e o addon. O bridge 1.5.0 repete isso antes do
 `web.start`, mas o comando manual é o fallback quando o app está em versão
 antiga.
 
@@ -193,7 +192,7 @@ export TMPDIR=/data/data/com.termux/files/usr/tmp
 ## Versões e arquivos de referência
 
 - App: `app/AndroidManifest.xml` (versionCode/versionName)
-- Bridge: `bridge/sig-bridge.mjs` (`version: '1.3.2'` no `welcome()`)
+- Bridge: `bridge/sig-bridge.mjs` (`version: '1.5.0'` no `welcome()`)
 - Camada: `dsh-web/apply.sh`, `dsh-web/artifacts/`
 - Logs: `~/.sig-harness/bridge.log`, `provision.log`, `bootstrap.log`
 - Payload em mídia: `/storage/emulated/0/Android/media/com.sig.harness/dsh-web.tgz`
