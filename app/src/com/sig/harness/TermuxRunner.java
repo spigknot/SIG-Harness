@@ -48,24 +48,29 @@ public final class TermuxRunner {
         return context.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED;
     }
 
-    public static Intent bridgeIntent(String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64) {
-        return bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64, false);
+    public static Intent bridgeIntent(String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64, String payloadPath) {
+        return bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64, payloadPath, false);
     }
 
     /**
      * Reinício completo: derruba o dsh web em execução antes de subir a bridge de novo,
      * para que os módulos editados em disco (patches, plugins) sejam carregados do zero.
      */
-    public static void restartBridge(Context context, String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64) {
-        context.startService(bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64, true));
+    public static void restartBridge(Context context, String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64, String payloadPath) {
+        context.startService(bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64, payloadPath, true));
     }
 
-    public static Intent bridgeIntent(String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64, boolean restart) {
+    public static Intent bridgeIntent(String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64, String payloadPath, boolean restart) {
         List<String> chunks = splitPayload(payloadBase64);
         // Camada dsh-web embutida no APK: despeja o pacote, extrai e reaplica as
         // customizações do DSH (patches, plugin da aba Voz e addon nativo) antes do bridge.
         String provision = "";
-        if (!chunks.isEmpty()) {
+        if (payloadPath != null && !payloadPath.isEmpty()) {
+            provision = "cp " + quote(payloadPath) + " \"$HOME/.sig-harness/dsh-web.tgz\" || exit 1; "
+                    + "rm -rf \"$HOME/.sig-harness/dsh-web\"; "
+                    + "tar xzf \"$HOME/.sig-harness/dsh-web.tgz\" -C \"$HOME/.sig-harness\" 2>/dev/null && "
+                    + "bash \"$HOME/.sig-harness/dsh-web/apply.sh\" --auto >> \"$HOME/.sig-harness/provision.log\" 2>&1; ";
+        } else if (!chunks.isEmpty()) {
             provision = "printf '%s' " + chunkRefs(chunks.size()) + " | base64 -d > \"$HOME/.sig-harness/dsh-web.tgz\"; "
                     + "rm -rf \"$HOME/.sig-harness/dsh-web\"; "
                     + "tar xzf \"$HOME/.sig-harness/dsh-web.tgz\" -C \"$HOME/.sig-harness\" 2>/dev/null && "
@@ -90,7 +95,7 @@ public final class TermuxRunner {
                 + "yes | pkg update -y >> \"$BOOT\" 2>&1; yes | pkg upgrade -y >> \"$BOOT\" 2>&1; "
                 + "yes | pkg install -y nodejs npm >> \"$BOOT\" 2>&1; }; "
                 + "command -v dsh >/dev/null 2>&1 || { echo \"[bootstrap] dsh " + DSH_BOOTSTRAP_VERSION + "\" >> \"$BOOT\"; "
-                + "npm i -g @deepseek-ai/dsh@" + DSH_BOOTSTRAP_VERSION + " >> \"$BOOT\" 2>&1; }; "
+                + "npm i -g @deepseek-ai/dsh@" + DSH_BOOTSTRAP_VERSION + " --ignore-scripts >> \"$BOOT\" 2>&1; }; "
                 + "printf '%s' '" + bridgeBase64 + "' | base64 -d > \"$HOME/.sig-harness/sig-bridge.mjs\"; "
                 + "if [ ! -f \"$HOME/.sig-harness/acp.patch.yml\" ]; then printf '%s' '" + patchBase64 + "' | base64 -d > \"$HOME/.sig-harness/acp.patch.yml\"; fi; "
                 + "chmod 700 \"$HOME/.sig-harness/sig-bridge.mjs\"; "
@@ -121,8 +126,8 @@ public final class TermuxRunner {
         return intent;
     }
 
-    public static void startBridge(Context context, String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64) {
-        context.startService(bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64));
+    public static void startBridge(Context context, String token, String cwd, int port, String bridgeBase64, String patchBase64, String payloadBase64, String payloadPath) {
+        context.startService(bridgeIntent(token, cwd, port, bridgeBase64, patchBase64, payloadBase64, payloadPath));
     }
 
     public static void openTermux(Context context) {

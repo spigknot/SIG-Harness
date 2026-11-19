@@ -178,7 +178,6 @@ class AcpRuntime {
     }
   }
   async start() {
-    this.converge();
     if (this.state === 'ready') return;
     if (this.startPromise) return this.startPromise;
     this.startPromise = this.startOnce().finally(() => { this.startPromise = null; });
@@ -451,7 +450,7 @@ class Bridge {
       pid: process.pid,
       port: this.port,
       home: HOME,
-      version: '1.2.1',
+      version: '1.3.2',
       state: this.runtime.state,
       detail: this.runtime.detail,
       model: this.conf.model || null,
@@ -604,8 +603,64 @@ class Bridge {
     });
   }
 
+  /**
+   * Reaplica a camada dsh-web (patches, plugins, addon nativo e koffi) antes de
+   * subir o host web. Um `npm i -g` do DSH apaga esses arquivos; sem isso o
+   * processo morre com "No usable native binding found".
+   */
+  async ensureWebLayer() {
+    const script = path.join(STATE_DIR, 'dsh-web', 'apply.sh');
+    if (!existsSync(script)) return { ok: true, skipped: true };
+    let out = '';
+    const code = await new Promise((resolve) => {
+      let settled = false;
+      let timer = null;
+      let child = null;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        resolve(value);
+      };
+      const collect = (buf) => {
+        out += String(buf);
+        if (out.length > 4000) out = out.slice(-4000);
+      };
+      timer = setTimeout(() => {
+        try { if (child) child.kill('SIGKILL'); } catch {}
+        out += '\ntimeout';
+        finish(-1);
+      }, 45000);
+      try {
+        child = spawn('/data/data/com.termux/files/usr/bin/bash', [script, '--auto'], {
+          cwd: HOME,
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      } catch (err) {
+        out += '\n' + err.message;
+        finish(-1);
+        return;
+      }
+      child.stdout.on('data', collect);
+      child.stderr.on('data', collect);
+      child.on('error', (err) => { out += '\n' + err.message; finish(-1); });
+      child.on('exit', (value) => finish(value === null ? -1 : value));
+    });
+    if (code !== 0) {
+      log('[layer] apply.sh falhou (' + code + '): ' + clip(out.trim(), 500));
+      return { ok: false, detail: out.trim() };
+    }
+    log('[layer] apply.sh ok');
+    return { ok: true };
+  }
+
   async webStart() {
-    if (this.webChild && this.webUrl) return { url: this.webUrl, owned: this.webOwned, port: this.webPort };
+    if (this.webChild && this.webUrl) {
+      if (await this.validateUrl(this.webUrl)) return { url: this.webUrl, owned: this.webOwned, port: this.webPort };
+      log('[web] cached URL failed validation; restarting host');
+      await this.webStop();
+    }
     if (this.webStarting) return this.webStarting;
     this.webStarting = (async () => {
       await this.stopHarness();
@@ -623,6 +678,10 @@ class Bridge {
         this.webPort = Number(parsed.port) || 0;
         log('[web] attached to running server on port ' + this.webPort);
         return { url, owned: false, port: this.webPort };
+      }
+      const layer = await this.ensureWebLayer();
+      if (!layer.ok) {
+        throw new BridgeError('layer_failed', 'A camada dsh-web nao pode ser aplicada: ' + clip(layer.detail || 'erro desconhecido', 300));
       }
       const bin = resolveDshBin();
       if (!bin) throw new BridgeError('dsh_not_found', 'DSH nao encontrado no Termux.');
@@ -665,9 +724,13 @@ class Bridge {
       if (!found) {
         try { child.kill('SIGKILL'); } catch {}
         this.webChild = null;
-        const tail = this.webStderr.slice(-5).join(' | ');
+        const tail = this.webStderr.slice(-8).join(' ');
         const motivo = spawnFailure !== null ? spawnFailure.message : tail;
-        throw new BridgeError('web_failed', 'O servidor web nao iniciou. ' + (motivo ? motivo : ''));
+        const clean = String(motivo || '').replace(/\s+/g, ' ').trim();
+        if (clean.includes('No usable native binding')) {
+          throw new BridgeError('web_failed', 'O addon nativo do DSH esta ausente. Rode no Termux: bash ~/.sig-harness/dsh-web/apply.sh --auto');
+        }
+        throw new BridgeError('web_failed', 'O servidor web nao iniciou. ' + clip(clean, 300));
       }
       this.webUrl = found;
       this.webOwned = true;

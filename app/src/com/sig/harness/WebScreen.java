@@ -16,6 +16,7 @@ import android.os.Build;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.ValueCallback;
 import android.webkit.WebView;
@@ -56,6 +57,8 @@ public final class WebScreen {
     private String voiceHook;
     private String shellHook;
     private final VoiceBridge voice;
+    /** Reloads automáticos quando o host troca de porta/token logo após o primeiro load. */
+    private int autoRetries;
     public static final int MIC_REQUEST = 4402;
     private static final int FILE_PICK = 4401;
 
@@ -141,7 +144,16 @@ public final class WebScreen {
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request != null && request.isForMainFrame()) {
                     progress.setVisibility(View.GONE);
+                    if (autoRetries++ < 2) { host.onRetry(); return; }
                     showError("Não foi possível carregar a interface web. " + (error == null ? "" : error.getDescription()));
+                }
+            }
+            @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                if (request != null && request.isForMainFrame()) {
+                    progress.setVisibility(View.GONE);
+                    if (autoRetries++ < 2) { host.onRetry(); return; }
+                    int status = errorResponse == null ? 0 : errorResponse.getStatusCode();
+                    showError("A interface web respondeu HTTP " + status + ". Toque em Tentar novamente.");
                 }
             }
         });
@@ -257,11 +269,20 @@ public final class WebScreen {
 
     public View view() { return root; }
 
-    public void load(String value) {
+    public void load(final String value) {
         this.url = value;
         hideError();
         showWaiting(false);
-        web.loadUrl(value);
+        // O host troca de porta a cada start e o cookie é por autoridade (host:porta).
+        // Sem limpar, o WebView acumula dezenas de cookies dsh-auth e o host responde
+        // 431 Request Header Fields Too Large antes mesmo de validar o token.
+        final CookieManager cookies = CookieManager.getInstance();
+        cookies.removeAllCookies(new ValueCallback<Boolean>() {
+            @Override public void onReceiveValue(Boolean ignored) {
+                cookies.flush();
+                web.loadUrl(value);
+            }
+        });
     }
 
     public void setWaiting(boolean visible, String text) {

@@ -32,8 +32,12 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -49,7 +53,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private static final int SCREEN_CHAT = 3;
     private static final int SCREEN_SETTINGS = 4;
     private static final int SCREEN_WEB = 5;
-    private static final String BRIDGE_VERSION = "1.2.1";
+    private static final String BRIDGE_VERSION = "1.3.2";
 
     private Prefs prefs;
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -85,12 +89,14 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private String bridgeBase64;
     private String patchBase64;
     private String payloadBase64;
+    private String payloadFilePath;
     private boolean restartingWeb;
 
     private View permissionOverlay;
     private JSONObject permissionData;
     private WebScreen webScreen;
     private boolean webStarting;
+    private int webStartGeneration;
     private View modelSheet;
     private final List<JSONObject> permissionQueue = new ArrayList<>();
 
@@ -112,12 +118,14 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             return;
         }
         try {
+            String payloadPath = payloadFile();
+            String payload = payloadPath.isEmpty() ? assetBase64OrEmpty("dsh-web.tgz") : "";
             if (restart) {
                 TermuxRunner.restartBridge(this, prefs.token(), prefs.cwd(), prefs.basePort(),
-                        assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), assetBase64OrEmpty("dsh-web.tgz"));
+                        assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), payload, payloadPath);
             } else {
                 TermuxRunner.startBridge(this, prefs.token(), prefs.cwd(), prefs.basePort(),
-                        assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), assetBase64OrEmpty("dsh-web.tgz"));
+                        assetBase64("sig-bridge.mjs"), assetBase64("acp.patch.yml"), payload, payloadPath);
             }
             termuxAttempts = 0;
         } catch (Throwable error) {
@@ -241,6 +249,83 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             return assetBase64(name);
         } catch (RuntimeException e) {
             return "";
+        }
+    }
+
+
+    /** SHA-256 do asset cru — usado para saber se o payload no cartão mudou. */
+    private String assetHash(String name) {
+        InputStream in = null;
+        try {
+            in = getAssets().open(name);
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) > 0) digest.update(buffer, 0, read);
+            byte[] bytes = digest.digest();
+            StringBuilder out = new StringBuilder(bytes.length * 2);
+            for (byte b : bytes) out.append(String.format("%02x", b));
+            return out.toString();
+        } catch (Throwable error) {
+            return "";
+        } finally {
+            if (in != null) { try { in.close(); } catch (Exception ignored) { } }
+        }
+    }
+
+    /**
+     * O Intent do Termux não pode passar de ~1 MB (limite do Binder). O tgz com o
+     * koffi passa disso, então o app grava o pacote em Android/media/<pacote>/ e
+     * envia só o caminho; o Termux (All Files Access) copia de lá.
+     */
+    private String payloadFile() {
+        if (payloadFilePath != null && !payloadFilePath.isEmpty()) {
+            File cached = new File(payloadFilePath);
+            if (cached.exists()) return payloadFilePath;
+        }
+        FileOutputStream out = null;
+        InputStream in = null;
+        FileOutputStream stampOut = null;
+        try {
+            File[] dirs = getExternalMediaDirs();
+            if (dirs == null || dirs.length == 0 || dirs[0] == null) return "";
+            File dir = dirs[0];
+            if (!dir.exists() && !dir.mkdirs()) return "";
+            String want = assetHash("dsh-web.tgz");
+            if (want.isEmpty()) return "";
+            File file = new File(dir, "dsh-web.tgz");
+            File stamp = new File(dir, "dsh-web.sha256");
+            String have = "";
+            if (stamp.exists()) {
+                FileInputStream stampIn = new FileInputStream(stamp);
+                byte[] buffer = new byte[128];
+                int read = stampIn.read(buffer);
+                stampIn.close();
+                if (read > 0) have = new String(buffer, 0, read, "UTF-8").trim();
+            }
+            if (!file.exists() || !want.equals(have)) {
+                in = getAssets().open("dsh-web.tgz");
+                out = new FileOutputStream(file);
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) > 0) out.write(buffer, 0, read);
+                out.close();
+                out = null;
+                in.close();
+                in = null;
+                stampOut = new FileOutputStream(stamp);
+                stampOut.write(want.getBytes("UTF-8"));
+                stampOut.close();
+                stampOut = null;
+            }
+            payloadFilePath = file.getAbsolutePath();
+            return payloadFilePath;
+        } catch (Throwable error) {
+            return "";
+        } finally {
+            try { if (out != null) out.close(); } catch (Exception ignored) { }
+            try { if (in != null) in.close(); } catch (Exception ignored) { }
+            try { if (stampOut != null) stampOut.close(); } catch (Exception ignored) { }
         }
     }
 
@@ -573,7 +658,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
                 toast = "Passo 2 copiado — pode demorar alguns minutos.";
                 break;
             case 3:
-                command = "npm i -g @deepseek-ai/dsh@" + version;
+                command = "npm i -g @deepseek-ai/dsh@" + version + " --ignore-scripts";
                 toast = "Passo 3 copiado — instala o DSH.";
                 break;
             default:
@@ -601,7 +686,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     /** Alternativa quando o Termux não aceita RUN_COMMAND: comando para colar no Termux. */
     private void copyBootstrapCommand() {
         String command = "pkg update -y && pkg upgrade -y && pkg install -y nodejs npm"
-                + " && npm i -g @deepseek-ai/dsh@" + TermuxRunner.DSH_BOOTSTRAP_VERSION
+                + " && npm i -g @deepseek-ai/dsh@" + TermuxRunner.DSH_BOOTSTRAP_VERSION + " --ignore-scripts"
                 + " && echo 'pronto: volte ao SIG Harness e toque em Iniciar Harness'";
         android.content.ClipboardManager clipboard =
                 (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
@@ -614,8 +699,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         if (startFlow) return;
         // APK novo = pacote dsh-web novo: provisiona e reinicia o host antes de tudo,
         // senão a interface continua servindo os módulos da versão anterior.
-        String payload = assetBase64OrEmpty("dsh-web.tgz");
-        String hash = payloadHash(payload);
+        String hash = assetHash("dsh-web.tgz");
         if (!hash.isEmpty() && !hash.equals(prefs.appliedPayload()) && TermuxRunner.isTermuxInstalled(this) && TermuxRunner.hasPermission(this)) {
             prefs.setAppliedPayload(hash);
             startFlow = true;
@@ -721,9 +805,9 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             ui.postDelayed(new Runnable() {
                 @Override public void run() {
                     client.close();
-                    startHarnessFlow();
+                    doRestartHarness();
                 }
-            }, 900);
+            }, 300);
             return;
         }
         bridge = client;
@@ -1377,16 +1461,14 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
 
     private void requestWebStart() {
         if (bridge == null) { webStarting = false; return; }
+        final int generation = ++webStartGeneration;
         JSONObject params = new JSONObject();
         bridge.request("web.start", params, new BridgeClient.Callback() {
             @Override public void onResult(JSONObject result) {
+                if (generation != webStartGeneration) return;
                 webStarting = false;
                 String url = result == null ? "" : result.optString("url", "");
-                if (webScreen == null) {
-                    JSONObject stop = new JSONObject();
-                    if (bridge != null) bridge.request("web.stop", stop, emptyCallback());
-                    return;
-                }
+                if (webScreen == null) return;
                 if (url.isEmpty()) {
                     webScreen.showError("O bridge não retornou o link de autenticação da interface web.");
                     return;
@@ -1394,6 +1476,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
                 webScreen.load(url);
             }
             @Override public void onError(String code, String message) {
+                if (generation != webStartGeneration) return;
                 webStarting = false;
                 if (webScreen != null) webScreen.showError(friendlyError(message));
             }
@@ -1869,6 +1952,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         polling = false;
         scanning = false;
         ui.removeCallbacksAndMessages(null);
+        webStartGeneration++;
         if (webScreen != null) { webScreen.destroy(); webScreen = null; }
         if (isFinishing() && bridge != null) {
             bridge.close();
