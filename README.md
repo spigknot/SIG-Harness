@@ -57,7 +57,7 @@ O código Android está em **app/**, a bridge está em **bridge/** e as personal
 
     bash build.sh
 
-O roteiro de validação e publicação fica em [UPDATE.md](UPDATE.md). Consulte também [dsh-web/README.md](dsh-web/README.md) para os patches e plugins.
+O roteiro de validação e publicação fica em [UPDATE.md](UPDATE.md). Consulte também [dsh-web/README.md](dsh-web/README.md) para os patches e plugins. O caso do **Hermes Agent Android** no mesmo aparelho está em [HERMES-ANDROID.md](HERMES-ANDROID.md).
 
 ## Dados e diagnósticos
 

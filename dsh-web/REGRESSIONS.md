@@ -68,6 +68,18 @@ Registro cronológico. Cada linha evita que o mesmo erro volte.
 
 ## 2026-11-19
 
+### Hermes Agent Android — teclado virtual morto no dashboard
+- **Sintoma:** no Chrome Android o teclado abria, mas nenhuma tecla chegava ao chat; o microfone
+  do Gboard também não mostrava palavras. PC, iOS e teclado físico funcionavam.
+- **Causa:** o `ChatPage` montava o xterm com `screenReaderMode: true`. No xterm 6.x,
+  `_inputEvent` descarta todo `input` com `inputType: "insertText"` nesse modo; teclados
+  virtuais do Android mandam letras como `insertText`, sem `keydown`.
+- **Correção:** `screenReaderMode: !/Android/i.test(navigator.userAgent)` no bundle compilado
+  (`ChatPage-*-imefix.js` / `index-*-imefix.js`), com `ensure_ime_bundle.py` reaplicando a cada
+  boot/60s. O build Android não tem `web/src`; o patch é no bundle, não no TypeScript.
+- **Regra:** dashboard com xterm no Android não pode ligar `screenReaderMode`; o teclado virtual
+  fica mudo. Detalhes em [HERMES-ANDROID.md](../HERMES-ANDROID.md).
+
 ### Modo web morria com “No usable native binding”
 - **Sintoma:** “Não foi possível abrir o modo web / O servidor web nao iniciou.
   attempts: undefined | …”.
