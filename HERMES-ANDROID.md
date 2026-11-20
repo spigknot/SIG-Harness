@@ -114,7 +114,7 @@ A config foi ajustada em model.default e custom_providers[0].model.
     /data/adb/service.d/99-hermes-dashboard.sh   (root)
       -> reaplica patches
       -> espera boot/app
-      -> nsenter -t <app_pid> -m -- su -g 10490 -G 3003 ... 10490 -c launcher
+      -> nsenter -t <app_pid> -m -- su -g 10490 -G 1023 -G 3003 ... 10490 -c launcher
 
     ~/.hermes/scripts/boot-hermes-dashboard.sh
       -> valida grupo 3003
@@ -134,7 +134,7 @@ A config foi ajustada em model.default e custom_providers[0].model.
 Todos os processos do app (supervisor, dashboard, gateway, TUI) devem rodar com:
 
 - UID/GID 10490;
-- grupos 3003 9997 20490 50490 99809997 99909997;
+- grupos 1023 3003 9997 20490 50490 99809997 99909997;
 - o mesmo mount namespace do processo principal do app
   (readlink /proc/<pid>/ns/mnt igual ao do com.hermesagent.android);
 - /data/data/com.termux oculto nesse namespace.
@@ -233,7 +233,7 @@ O gateway.lock deve conter "hermes_home": "/data/user/0/com.hermesagent.android/
 
 Teste de retomada (troque <sid> pelo ID da sessão):
 
-    su -g 10490 -G 3003 -G 9997 -G 20490 -G 50490 -G 99809997 -G 99909997 10490 -c '
+    su -g 10490 -G 1023 -G 3003 -G 9997 -G 20490 -G 50490 -G 99809997 -G 99909997 10490 -c '
       export HOME=/data/user/0/com.hermesagent.android/files/home
       export PREFIX=/data/user/0/com.hermesagent.android/files/usr
       export PATH=$HOME/.hermes-android/bin:$PREFIX/bin:/system/bin
@@ -306,3 +306,53 @@ Backups de config:
 
 Durante o diagnóstico, um diff da config.yaml imprimiu a API key do provider command-code.
 Recomenda-se rotacionar essa chave. Nenhum valor de chave deve ser gravado neste documento.
+
+## 10. Pasta padrão dos projetos (2026-11-20)
+
+O Hermes Agent foi configurado para usar a mesma pasta de projetos do restante do aparelho:
+
+```yaml
+terminal:
+  cwd: /data/media/0/Projetos
+desktop:
+  repo_scan_enabled: true
+  repo_scan_roots:
+    - /data/media/0/Projetos
+```
+
+`/data/media/0/Projetos` é o **mesmo diretório físico** que
+`/storage/emulated/0/Projetos`; muda só o caminho usado por dentro do Android. O app Hermes não
+tem `MANAGE_EXTERNAL_STORAGE`, então o FUSE de `/storage/emulated/0` recusa escrita para o UID
+dele. O caminho `/data/media/0/Projetos` é acessível com o grupo suplementar **1023 (media_rw)**.
+
+Por isso, todos os processos do agente (supervisor, dashboard, gateway e TUI) precisam rodar com
+`-G 1023`:
+
+```text
+su -g 10490 -G 1023 -G 3003 -G 9997 -G 20490 -G 50490 -G 99809997 -G 99909997 10490 ...
+```
+
+Os scripts de boot/guarda foram atualizados para exigir os grupos 3003 e 1023. O guard
+`00-hermes-guard.sh` restaura os scripts canônicos; se um update os trocar, a checagem falha e o
+log mostra `missing media_rw group 1023` em vez de subir um agente sem acesso à pasta.
+
+Efeitos:
+
+- **chats novos** começam em `/data/media/0/Projetos` (via `terminal.cwd`);
+- o sidebar **Projects** varre essa pasta (via `desktop.repo_scan_roots`);
+- sessões antigas continuam no cwd em que foram criadas; para usar a pasta nova, abra um chat novo
+  ou escolha a pasta no seletor de workspace;
+- a interface pode mostrar `/data/media/0/Projetos`; é a mesma pasta que
+  `/storage/emulated/0/Projetos` no gerenciador de arquivos/PC.
+
+Verificação:
+
+```sh
+su -g 10490 -G 1023 -G 3003 10490 -c 'id -G; test -w /data/media/0/Projetos && echo WRITE_OK'
+for p in $(pgrep -f 'dashboard --host|hermes_cli.main.*gateway|dashboard-supervisor'); do
+  echo "== $p"; grep -E '^(Uid|Groups)' /proc/$p/status
+done
+```
+
+O `Groups` dos três processos precisa conter `1023` e `3003`. O `terminal.cwd` também pode ser
+conferido com `hermes config get terminal.cwd` (deve imprimir `/data/media/0/Projetos`).
