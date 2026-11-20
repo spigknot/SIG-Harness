@@ -325,6 +325,12 @@ desktop:
 tem `MANAGE_EXTERNAL_STORAGE`, então o FUSE de `/storage/emulated/0` recusa escrita para o UID
 dele. O caminho `/data/media/0/Projetos` é acessível com o grupo suplementar **1023 (media_rw)**.
 
+Além do config, `boot-hermes-dashboard.sh` e os `ensure-*.sh` fazem `cd` para essa pasta e
+exportam `TERMINAL_CWD`; o backend local do Hermes usa `os.getcwd()` (não o config) para o cwd
+padrão. O wrapper `~/.hermes-android/bin/hermes` também troca o home do app pela pasta quando o
+cwd é o home e não há um projeto explícito. Se um update do Hermes substituir esse wrapper, o CLI
+volta a usar o home até o ajuste ser reaplicado.
+
 Por isso, todos os processos do agente (supervisor, dashboard, gateway e TUI) precisam rodar com
 `-G 1023`:
 
