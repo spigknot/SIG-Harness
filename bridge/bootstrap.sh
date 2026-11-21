@@ -1,8 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# Executado pelo RUN_COMMAND com o UID do Termux. Só o caminho do pacote viaja no Intent.
+# O RUN_COMMAND recebe o endereço temporário em loopback, nunca o pacote.
 set -Eeuo pipefail
 umask 077
-archive=$1 expected=$2 progress=$3 mode=$4 port=$5 token=$6 cwd=$7
+transfer=$1 expected=$2 mode=$3 port=$4 token=$5 cwd=$6
 export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 export PATH="$PREFIX/bin:/system/bin"
 export TMPDIR="$PREFIX/tmp"
@@ -19,10 +19,25 @@ stage=""
 package_backup=""
 package_target=""
 last_step=""
-# Apenas chaves de estado sem credenciais são gravadas no armazenamento compartilhado.
+transfer_port=${transfer%%/*}
+transfer_path=/${transfer#*/}
+fetch() {
+  /system/bin/timeout "$1" "$PREFIX/bin/bash" -c '
+    set -eu
+    exec 3<>"/dev/tcp/127.0.0.1/$1"
+    printf "GET %s HTTP/1.0\r\n\r\n" "$2" >&3
+    IFS= read -r line <&3
+    [[ "$line" == "HTTP/1.0 200 OK"$'"'"'\r'"'"' ]] || exit 1
+    while IFS= read -r line <&3; do
+      if [[ "$line" == $'"'"'\r'"'"' ]]; then exec cat <&3; fi
+    done
+    exit 1
+  ' sig-transfer "$transfer_port" "$transfer_path/$2"
+}
+
 step() {
   last_step=$1
-  printf '%s\n' "$1" > "$progress" || :
+  fetch 2 "step/$1" >/dev/null 2>&1 || :
 }
 cleanup() {
   local rc=$?
@@ -70,7 +85,7 @@ if [ "${#missing[@]}" -gt 0 ]; then
 fi
 
 step assets
-cp -- "$archive" "$stage/payload.tgz"
+fetch 30 payload > "$stage/payload.tgz"
 printf '%s  %s\n' "$expected" "$stage/payload.tgz" | sha256sum -c --status
 tar xzf "$stage/payload.tgz" -C "$stage"
 layer="$stage/dsh-web"

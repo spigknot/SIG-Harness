@@ -527,8 +527,17 @@ class Bridge {
     const enabled = !(params && params.enabled === false);
     const bootDir = path.join(HOME, '.termux', 'boot');
     const file = path.join(bootDir, 'sig-harness.sh');
+    const external = path.join(HOME, '.termux', 'controle-boot-managed');
+    const automatic = params?.automatic === true;
+    if (automatic && existsSync(external)) return { enabled: existsSync(file), path: file };
+    const claimBoot = () => {
+      if (!automatic) {
+        try { unlinkSync(external); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      }
+    };
     if (!enabled) {
       try { unlinkSync(file); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      claimBoot();
       log('[boot] disabled');
       return { enabled: false, path: file };
     }
@@ -556,6 +565,7 @@ class Bridge {
     const temporary = path.join(bootDir, '..', 'sig-harness-boot.tmp');
     writeFileSync(temporary, lines.join('\n') + '\n', { mode: 0o700 });
     renameSync(temporary, file);
+    claimBoot();
     log('[boot] script ' + file);
     return { enabled: true, path: file, port: this.port, cwd };
   }

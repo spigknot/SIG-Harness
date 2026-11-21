@@ -43,9 +43,9 @@ móvel e as personalizações depois dessa inicialização.
 
 9. **Payload grande não viaja no Intent do Termux.** O Binder limita a
    transação a ~1 MB e strings em Parcel são UTF-16. O `dsh-web.tgz` atual
-   (com koffi) tem 435 KB e estouraria; o app grava em
-   `Android/media/com.sig.harness/dsh-web.tgz` e envia só o caminho. Não
-   volte a embutir o tgz em base64 no `RUN_COMMAND_ARGUMENTS`.
+   (com koffi) tem 435 KB e estouraria. O app envia um endereço temporário
+   em loopback e o Termux confere o SHA-256 ao baixar. Não volte a embutir o
+   tgz em base64 no `RUN_COMMAND_ARGUMENTS` nem a exigir armazenamento compartilhado.
 10. **Cookie do dsh é por autoridade.** O host troca de porta a cada
     `web.start`; cookies não são isolados por porta. Limpe o jar do WebView
     antes de cada carga (`WebScreen.load`) ou o header `Cookie` passa de

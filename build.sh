@@ -19,7 +19,7 @@ done
 # Keep the embedded bridge and ACP patch in sync with the bridge directory.
 cp "$ROOT/bridge/sig-bridge.mjs" "$APP/assets/sig-bridge.mjs"
 cp "$ROOT/bridge/acp.patch.yml" "$APP/assets/acp.patch.yml"
-# O app executa o bootstrap por RUN_COMMAND e fornece o pacote por arquivo.
+# O app executa o bootstrap por RUN_COMMAND e fornece o pacote por loopback.
 cp "$ROOT/bridge/bootstrap.sh" "$APP/assets/bootstrap.sh"
 tar czf "$APP/assets/dsh-web.tgz" -C "$ROOT" dsh-web \
   bridge/sig-bridge.mjs bridge/tailscale-web.mjs bridge/acp.patch.yml bridge/ensure-bridge.cjs

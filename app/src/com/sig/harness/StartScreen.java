@@ -15,7 +15,6 @@ public final class StartScreen {
         void onRepair();
         void onOpenTermux();
         void onInstallTermux();
-        void onCopyTermuxSetup();
         void onOpenSettings();
     }
 
@@ -60,8 +59,7 @@ public final class StartScreen {
 
         setup = Ui.column(c);
         add(setup, Ui.ghostButton(c, "Abrir Termux", v -> host.onOpenTermux()), 8);
-        add(setup, Ui.ghostButton(c, "Copiar comando para liberar o Termux", v -> host.onCopyTermuxSetup()), 4);
-        add(setup, Ui.ghostButton(c, "Permissões do Android", v -> host.onOpenSettings()), 4);
+        add(setup, Ui.ghostButton(c, "Permissões do SIG Harness", v -> host.onOpenSettings()), 4);
         add(body, setup, 12);
         setBusy(false);
     }

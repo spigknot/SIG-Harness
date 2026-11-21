@@ -8,7 +8,7 @@ A versão atual é **1.5.5**. [Baixe o APK na página de releases](https://githu
 
 1. Instale o Termux por uma fonte compatível, como [F-Droid](https://f-droid.org/packages/com.termux/) ou o [repositório oficial](https://github.com/termux/termux-app/releases). Abra o Termux uma vez e aguarde a configuração inicial.
 2. Instale o APK do SIG Harness e abra o app.
-3. Conceda a permissão **Executar comandos no Termux** quando o Android solicitar. Se o Termux bloquear comandos de outros apps, use **Copiar comando para liberar o Termux** na tela do SIG Harness, execute o comando no Termux e volte ao app.
+3. Conceda a permissão **Executar comandos no Termux** quando o Android solicitar. Se o Termux bloquear a primeira conexão, o SIG Harness mostra **Configurar o Termux** com os passos para liberar o acesso. O pacote de instalação é enviado por uma conexão local e não depende de permissão de armazenamento no Termux.
 4. Conceda ao Termux acesso aos arquivos do aparelho se o Android pedir.
 
 ## Abertura e reparo

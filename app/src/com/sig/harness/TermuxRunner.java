@@ -13,9 +13,6 @@ import android.os.Handler;
 import android.os.Looper;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -28,6 +25,7 @@ import java.util.regex.Pattern;
 public final class TermuxRunner {
     private static final String TERMUX_PACKAGE = "com.termux";
     public static final String PERMISSION = "com.termux.permission.RUN_COMMAND";
+    static final String EXTERNAL_APPS = "O Termux recusou o comando. Ative comandos externos no Termux e tente novamente.";
     private static final String EXTRA = "com.termux.RUN_COMMAND_";
     private static final Pattern READY = Pattern.compile("(?m)^SIG_READY ([0-9]{1,5}) ([0-9]{1,10})$");
 
@@ -66,7 +64,7 @@ public final class TermuxRunner {
         private final Listener listener;
         private final String id = UUID.randomUUID().toString();
         private final String action;
-        private File statusFile;
+        private InstallTransfer transfer;
         private PendingIntent resultIntent;
         private boolean registered;
         private boolean closed;
@@ -91,41 +89,32 @@ public final class TermuxRunner {
         void start(String mode, String token, String cwd, int port) {
             new Thread(() -> {
                 try {
-                    File[] dirs = app.getExternalMediaDirs();
-                    if (dirs.length == 0 || dirs[0] == null || (!dirs[0].isDirectory() && !dirs[0].mkdirs())) {
-                        throw new IOException("Armazenamento compartilhado indisponível");
-                    }
                     String script = new String(readAsset("bootstrap.sh"), StandardCharsets.UTF_8);
                     byte[] payload = readAsset("dsh-web.tgz");
                     String sha = hex(MessageDigest.getInstance("SHA-256").digest(payload));
-                    File folder = dirs[0];
-                    File file = new File(folder, "harness-" + sha + ".tgz");
-                    // Sempre regrava a partir do APK. O Termux faz outra verificação após copiar.
-                    File tmp = new File(folder, id + ".tmp");
-                    try {
-                        try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(payload); }
-                        if (!tmp.renameTo(file)) throw new IOException("Não foi possível compartilhar o pacote");
-                    } finally {
-                        tmp.delete();
-                    }
-                    File progress = new File(folder, id + ".status");
-                    if (!progress.createNewFile()) throw new IOException("Arquivo de progresso indisponível");
-                    ui.post(() -> send(script, file, sha, progress, mode, token, cwd, port, 0));
+                    InstallTransfer ready = new InstallTransfer(payload);
+                    app.runOnUiThread(() -> {
+                        if (closed) {
+                            ready.close();
+                            return;
+                        }
+                        transfer = ready;
+                        send(script, sha, mode, token, cwd, port, 0);
+                    });
                 } catch (Exception e) {
-                    ui.post(() -> fail("Não foi possível preparar os arquivos de instalação. Confira o armazenamento do aparelho."));
+                    ui.post(() -> fail("Não foi possível preparar o envio local dos arquivos de instalação."));
                 }
             }, "sig-install-assets").start();
         }
 
-        private void send(String script, File file, String sha, File status, String mode,
+        private void send(String script, String sha, String mode,
                           String token, String cwd, int port, int attempt) {
             if (closed) return;
             if (!app.hasWindowFocus()) {
                 if (attempt >= 30) { fail("Volte ao SIG Harness e tente novamente para autorizar o comando."); return; }
-                ui.postDelayed(() -> send(script, file, sha, status, mode, token, cwd, port, attempt + 1), 300);
+                ui.postDelayed(() -> send(script, sha, mode, token, cwd, port, attempt + 1), 300);
                 return;
             }
-            statusFile = status;
             try {
                 if (Build.VERSION.SDK_INT >= 33) app.registerReceiver(receiver, new IntentFilter(action), Context.RECEIVER_NOT_EXPORTED);
                 else app.registerReceiver(receiver, new IntentFilter(action));
@@ -138,7 +127,7 @@ public final class TermuxRunner {
                 cmd.setClassName(TERMUX_PACKAGE, "com.termux.app.RunCommandService");
                 cmd.putExtra(EXTRA + "PATH", "/data/data/com.termux/files/usr/bin/bash");
                 cmd.putExtra(EXTRA + "ARGUMENTS", new String[]{"-c", script, "sig-bootstrap",
-                        file.getAbsolutePath(), sha, status.getAbsolutePath(), mode, String.valueOf(port), token, cwd});
+                        transfer.endpoint(), sha, mode, String.valueOf(port), token, cwd});
                 cmd.putExtra(EXTRA + "WORKDIR", "/data/data/com.termux/files/home");
                 cmd.putExtra(EXTRA + "BACKGROUND", true);
                 cmd.putExtra(EXTRA + "COMMAND_LABEL", "SIG Harness");
@@ -176,18 +165,13 @@ public final class TermuxRunner {
         };
 
         private void readProgress() {
-            if (statusFile == null) return;
-            try (FileInputStream in = new FileInputStream(statusFile)) {
-                byte[] buf = new byte[64];
-                int count = in.read(buf);
-                if (count <= 0) return;
-                String step = new String(buf, 0, count, StandardCharsets.US_ASCII).trim();
-                String text = label(step);
-                if (text != null && !step.equals(lastStep)) {
-                    lastStep = step;
-                    listener.onProgress(text);
-                }
-            } catch (IOException ignored) { }
+            if (transfer == null) return;
+            String step = transfer.step();
+            String text = label(step);
+            if (text != null && !step.equals(lastStep)) {
+                lastStep = step;
+                listener.onProgress(text);
+            }
         }
 
         private final BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -205,7 +189,6 @@ public final class TermuxRunner {
                     try {
                         int port = Integer.parseInt(ready.group(1));
                         int pid = Integer.parseInt(ready.group(2));
-                        if (statusFile != null) statusFile.delete();
                         close();
                         listener.onReady(port, pid);
                         return;
@@ -215,13 +198,13 @@ public final class TermuxRunner {
                 if (failed.find() && label(failed.group(1)) != null) lastStep = failed.group(1);
                 String detail = label(lastStep);
                 if (detail == null) {
-                    fail("O Termux recusou o comando. Libere comandos externos no Termux e tente novamente.");
+                    fail(EXTERNAL_APPS);
                 } else if ("environment".equals(lastStep)) {
                     fail("Execute pelo Termux no Android ARM64 com a sessão comum do Termux.");
                 } else if ("lock".equals(lastStep)) {
                     fail("Já existe uma verificação ou reparo em andamento. Aguarde e tente novamente.");
                 } else if ("assets".equals(lastStep)) {
-                    fail("O Termux não conseguiu ler ou validar o pacote do app. Confira o acesso aos arquivos do aparelho no Termux.");
+                    fail("O Termux não conseguiu receber ou validar o pacote pelo envio local. Tente reparar a instalação.");
                 } else {
                     fail("Falha em «" + detail + "». Consulte ~/.sig-harness/bootstrap.log no Termux.");
                 }
@@ -230,7 +213,6 @@ public final class TermuxRunner {
 
         private void fail(String message) {
             if (closed) return;
-            if (statusFile != null) statusFile.delete();
             close();
             listener.onFailure(message);
         }
@@ -238,6 +220,10 @@ public final class TermuxRunner {
         void close() {
             closed = true;
             ui.removeCallbacksAndMessages(null);
+            if (transfer != null) {
+                transfer.close();
+                transfer = null;
+            }
             if (registered) {
                 app.unregisterReceiver(receiver);
                 registered = false;

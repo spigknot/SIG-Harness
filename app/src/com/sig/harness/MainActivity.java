@@ -232,7 +232,6 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             TermuxRunner.openTermux(MainActivity.this);
         }
         @Override public void onInstallTermux() { resumeAfterSetup = true; openInstallPage(); }
-        @Override public void onCopyTermuxSetup() { copyTermuxSetup(); }
         @Override public void onOpenSettings() { resumeAfterSetup = true; openAppSettings(); }
     };
 
@@ -492,6 +491,18 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
             @Override public void onFailure(String message) {
                 installation = null;
                 failStart("Não foi possível abrir o Harness", message);
+                if (TermuxRunner.EXTERNAL_APPS.equals(message)) {
+                    new AlertDialog.Builder(MainActivity.this)
+                            .setTitle("Configurar o Termux")
+                            .setMessage("Para liberar a primeira conexão, copie a configuração e cole no Termux. Depois volte aqui.")
+                            .setPositiveButton("Copiar e abrir Termux", (d, w) -> {
+                                copyTermuxSetup();
+                                resumeAfterSetup = true;
+                                TermuxRunner.openTermux(MainActivity.this);
+                            })
+                            .setNegativeButton("Agora não", null)
+                            .show();
+                }
             }
         });
         installation.start(mode, prefs.token(), prefs.cwd(), prefs.basePort());
@@ -1088,8 +1099,12 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
 
     private void configureBoot() {
         if (bridge == null) return;
-        bridge.request("boot.configure", bootParams(prefs.boot()), new BridgeClient.Callback() {
-            @Override public void onResult(JSONObject result) { }
+        JSONObject params = bootParams(prefs.boot());
+        try { params.put("automatic", true); } catch (org.json.JSONException ignored) { }
+        bridge.request("boot.configure", params, new BridgeClient.Callback() {
+            @Override public void onResult(JSONObject result) {
+                if (result != null) prefs.setBoot(result.optBoolean("enabled", prefs.boot()));
+            }
             @Override public void onError(String code, String message) { }
         });
     }
