@@ -47,9 +47,10 @@ móvel e as personalizações depois dessa inicialização.
    em loopback e o Termux confere o SHA-256 ao baixar. Não volte a embutir o
    tgz em base64 no `RUN_COMMAND_ARGUMENTS` nem a exigir armazenamento compartilhado.
 10. **Cookie do dsh é por autoridade.** O host troca de porta a cada
-    `web.start`; cookies não são isolados por porta. Limpe o jar do WebView
-    antes de cada carga (`WebScreen.load`) ou o header `Cookie` passa de
+    `web.start`; cookies não são isolados por porta. Expire os cookies `dsh-auth-*`
+    de `127.0.0.1` antes de cada carga (`WebScreen.load`) ou o header `Cookie` passa de
     16 KB e o Node responde 431 (`ERR_HTTP_RESPONSE_CODE_FAILURE`).
+    Preserve os cookies das abas remotas, que compartilham o mesmo jar.
 11. **`npm i` do DSH apaga patches e addons.** O bootstrap verifica e restaura esses
     arquivos antes de entregar a ponte ao app. O reparo manual percorre as mesmas etapas.
 12. **`apply.sh` fora do Termux precisa de `TMPDIR` do Termux.** Se rodar via

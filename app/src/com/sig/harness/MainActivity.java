@@ -55,6 +55,8 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private final Handler ui = new Handler(Looper.getMainLooper());
     private FrameLayout contentHost;
     private FrameLayout overlayHost;
+    private HarnessTabs tabs;
+    private WebFilePicker webFiles;
     private int pendingUploads;
     private boolean pendingMic;
     private SttSession stt;
@@ -109,6 +111,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         getWindow().setStatusBarColor(Ui.BG);
         getWindow().setNavigationBarColor(Ui.BG);
         prefs = new Prefs(this);
+        webFiles = new WebFilePicker(this);
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Ui.BG);
@@ -120,7 +123,8 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         root.addView(connectionBanner, bannerLp);
         overlayHost = new FrameLayout(this);
         root.addView(overlayHost, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        setContentView(root);
+        tabs = new HarnessTabs(this, root, webFiles, this::openChrome);
+        setContentView(tabs.view());
 
         showStart();
         ui.post(() -> launchHarness("check"));
@@ -471,6 +475,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         }
         // O WebView anterior pode ter uma navegação ou callback de cookies pendente.
         if (webScreen != null) {
+            contentHost.removeView(webScreen.view());
             webScreen.destroy();
             webScreen = null;
         }
@@ -1150,7 +1155,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private void doStartWeb() {
         if (webStarting) return;
         if (bridge == null) { launchHarness("check"); return; }
-        if (webScreen == null) webScreen = new WebScreen(this, webHost);
+        if (webScreen == null) webScreen = new WebScreen(this, webHost, webFiles);
         webScreen.setWaiting(true, "Iniciando e autenticando a interface web…");
         screen = SCREEN_WEB;
         setScreen(webScreen.view());
@@ -1452,7 +1457,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (webScreen != null && webScreen.handleFileChooserResult(requestCode, resultCode, data)) return;
+        if (webFiles.handleResult(requestCode, resultCode, data)) return;
         if (requestCode != REQ_ATTACH || resultCode != RESULT_OK || data == null) return;
         final ChatScreen target = chatScreen;
         if (target == null) return;
@@ -1629,6 +1634,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     }
 
     @Override public void onBackPressed() {
+        if (tabs.handleBack()) return;
         if (permissionOverlay != null) {
             if (permissionData != null) answerPermission(permissionData.optString("requestId", ""), null);
             else closePermission();
@@ -1655,7 +1661,12 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         finishing = true;
         ui.removeCallbacksAndMessages(null);
         webStartGeneration++;
-        if (webScreen != null) { webScreen.destroy(); webScreen = null; }
+        tabs.destroy();
+        if (webScreen != null) {
+            contentHost.removeView(webScreen.view());
+            webScreen.destroy();
+            webScreen = null;
+        }
         if (installation != null) installation.close();
         if (bridge != null) {
             bridge.setListener(null);

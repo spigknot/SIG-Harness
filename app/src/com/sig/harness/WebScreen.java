@@ -1,18 +1,13 @@
 package com.sig.harness;
 
 import android.app.Activity;
-import android.content.ClipData;
 import android.content.Context;
-import android.content.Intent;
 import android.graphics.Color;
-import android.net.Uri;
 import android.net.Uri;
 import android.view.Gravity;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
-import android.provider.MediaStore;
-import android.os.Build;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -30,7 +25,6 @@ import android.widget.Toast;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.List;
 
 /** Optional full web UI of the DSH, authenticated by the URL returned by the bridge. */
 public final class WebScreen {
@@ -56,7 +50,7 @@ public final class WebScreen {
     private String url;
     private boolean destroyed;
     private int loadGeneration;
-    private ValueCallback<Uri[]> fileCallback;
+    private final WebFilePicker files;
     private String downloadHook;
     private String voiceHook;
     private String shellHook;
@@ -64,11 +58,11 @@ public final class WebScreen {
     /** Reloads automáticos quando o host troca de porta/token logo após o primeiro load. */
     private int autoRetries;
     public static final int MIC_REQUEST = 4402;
-    private static final int FILE_PICK = 4401;
 
-    public WebScreen(Context context, Host host) {
+    public WebScreen(Context context, Host host, WebFilePicker files) {
         this.c = context;
         this.host = host;
+        this.files = files;
         this.voice = ((context instanceof Activity)
                 ? new VoiceBridge((Activity) context, new Prefs(context), new VoiceBridge.Host() {
                     @Override public void voiceState(String state, String detail) { dispatchVoiceState(state, detail); }
@@ -189,62 +183,7 @@ public final class WebScreen {
         });
         web.setWebChromeClient(new WebChromeClient() {
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
-                if (fileCallback != null) fileCallback.onReceiveValue(null);
-                fileCallback = callback;
-                if (!(c instanceof Activity)) {
-                    fileCallback = null;
-                    callback.onReceiveValue(null);
-                    return false;
-                }
-                List<String> mimes = new ArrayList<String>();
-                String[] accept = params == null ? null : params.getAcceptTypes();
-                if (accept != null) {
-                    for (String type : accept) {
-                        if (type != null && !type.trim().isEmpty()) mimes.add(type.trim());
-                    }
-                }
-                boolean multiple = params != null && params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE;
-
-                // Imagem: vai para a galeria (Photo Picker), que inclui Google Fotos e mostra
-                // primeiro o que foi tirado agora. Arquivo genérico continua no navegador
-                // de documentos.
-                boolean imagesOnly = !mimes.isEmpty();
-                for (String mime : mimes) {
-                    if (!mime.startsWith("image/")) { imagesOnly = false; break; }
-                }
-                Intent intent = imagesOnly ? photoPicker(multiple) : null;
-                if (intent == null) {
-                    intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                    intent.addCategory(Intent.CATEGORY_OPENABLE);
-                    if (mimes.isEmpty()) {
-                        intent.setType("*/*");
-                    } else if (mimes.size() == 1) {
-                        intent.setType(mimes.get(0));
-                    } else {
-                        intent.setType("*/*");
-                        intent.putExtra(Intent.EXTRA_MIME_TYPES, mimes.toArray(new String[0]));
-                    }
-                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multiple);
-                }
-                try {
-                    ((Activity) c).startActivityForResult(intent, FILE_PICK);
-                } catch (Throwable error) {
-                    if (imagesOnly) {
-                        // Photo Picker indisponível neste aparelho: cai no navegador de documentos.
-                        try {
-                            Intent fallback = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                            fallback.addCategory(Intent.CATEGORY_OPENABLE);
-                            fallback.setType(mimes.isEmpty() ? "image/*" : mimes.get(0));
-                            fallback.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, multiple);
-                            ((Activity) c).startActivityForResult(fallback, FILE_PICK);
-                            return true;
-                        } catch (Throwable ignored) { }
-                    }
-                    fileCallback = null;
-                    callback.onReceiveValue(null);
-                    return false;
-                }
-                return true;
+                return files.open(view, callback, params);
             }
             @Override public void onProgressChanged(WebView view, int newProgress) {
                 progress.setProgress(newProgress);
@@ -306,17 +245,30 @@ public final class WebScreen {
         final int generation = ++loadGeneration;
         this.url = value;
         hideError();
-        // O host troca de porta a cada start e o cookie é por autoridade (host:porta).
-        // Sem limpar, o WebView acumula dezenas de cookies dsh-auth e o host responde
-        // 431 Request Header Fields Too Large antes mesmo de validar o token.
+        // Expire só os cookies do DSH local: a porta muda, mas o WebView
+        // compartilha os cookies por host entre todas as abas.
         final CookieManager cookies = CookieManager.getInstance();
-        cookies.removeAllCookies(new ValueCallback<Boolean>() {
-            @Override public void onReceiveValue(Boolean ignored) {
-                if (destroyed || generation != loadGeneration) return;
-                cookies.flush();
-                web.loadUrl(value);
+        String local = "http://127.0.0.1/";
+        String stored = cookies.getCookie(local);
+        ArrayList<String> names = new ArrayList<>();
+        if (stored != null) {
+            for (String entry : stored.split(";")) {
+                int delimiter = entry.indexOf('=');
+                if (delimiter < 0) continue;
+                String name = entry.substring(0, delimiter).trim();
+                if (name.matches("dsh-auth-[A-Za-z0-9_-]+")) names.add(name);
             }
-        });
+        }
+        if (names.isEmpty()) {
+            web.loadUrl(value);
+            return;
+        }
+        final int[] remaining = {names.size()};
+        for (String name : names) {
+            cookies.setCookie(local, name + "=; Max-Age=0; Path=/", ignored -> {
+                if (--remaining[0] == 0 && !destroyed && generation == loadGeneration) web.loadUrl(value);
+            });
+        }
     }
 
     public void setWaiting(boolean visible, String text) {
@@ -355,6 +307,7 @@ public final class WebScreen {
 
     public void destroy() {
         destroyed = true;
+        files.cancel(web);
         if (voice != null) voice.release();
         try { web.destroy(); } catch (Throwable ignored) { }
     }
@@ -390,43 +343,6 @@ public final class WebScreen {
 
     private void evaluate(String code) {
         try { web.evaluateJavascript(code, null); } catch (Throwable ignored) { }
-    }
-
-    /**
-     * Deliver the system file-picker result to the WebView. Called by the host
-     * activity before its own attachment handling.
-     */
-    /** Photo Picker do sistema (Android 13+) — galeria com Google Fotos; nulo se indisponível. */
-    private Intent photoPicker(boolean multiple) {
-        if (Build.VERSION.SDK_INT < 33) return null;
-        Intent intent = new Intent(MediaStore.ACTION_PICK_IMAGES);
-        intent.setType("image/*");
-        if (multiple) intent.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, 10);
-        if (intent.resolveActivity(c.getPackageManager()) == null) return null;
-        return intent;
-    }
-
-    public boolean handleFileChooserResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode != FILE_PICK) return false;
-        ValueCallback<Uri[]> callback = fileCallback;
-        fileCallback = null;
-        if (callback == null) return true;
-        if (resultCode != Activity.RESULT_OK || data == null) {
-            callback.onReceiveValue(null);
-            return true;
-        }
-        List<Uri> uris = new ArrayList<Uri>();
-        ClipData clip = data.getClipData();
-        if (clip != null) {
-            for (int i = 0; i < clip.getItemCount(); i++) {
-                Uri uri = clip.getItemAt(i).getUri();
-                if (uri != null) uris.add(uri);
-            }
-        } else if (data.getData() != null) {
-            uris.add(data.getData());
-        }
-        callback.onReceiveValue(uris.isEmpty() ? null : uris.toArray(new Uri[0]));
-        return true;
     }
 
     /** Install the in-page reload control next to the agent-preset label. */

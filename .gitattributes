@@ -1,0 +1,4 @@
+*.sh text eol=lf
+bridge/** text=auto eol=lf
+dsh-web/** text=auto eol=lf
+app/assets/** text=auto eol=lf

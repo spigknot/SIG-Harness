@@ -9,10 +9,12 @@
  *   node tools/release-api.mjs verify <tag> <apk> -> confere download público
  */
 import { readFileSync, writeFileSync, statSync, createReadStream } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const REPO = 'spigknot/SIG-Harness';
-const ROOT = new URL('..', import.meta.url).pathname;
-const MANIFEST = ROOT + 'app/AndroidManifest.xml';
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const MANIFEST = join(ROOT, 'app', 'AndroidManifest.xml');
 const [cmd, ...args] = process.argv.slice(2);
 
 function manifest() {
@@ -53,7 +55,7 @@ async function api(path, init = {}) {
 async function publish(tag) {
   const { name } = manifest();
   const version = name;
-  const apkPath = ROOT + 'dist/SIG-Harness.apk';
+  const apkPath = join(ROOT, 'dist', 'SIG-Harness.apk');
   const exists = await api(`/releases/tags/${tag}`).catch(() => null);
   const release = exists ?? await api('/releases', {
     method: 'POST',
@@ -62,7 +64,7 @@ async function publish(tag) {
       tag_name: tag,
       name: `SIG Harness ${version}`,
       target_commitish: 'main',
-      body: `## SIG Harness ${version}\n\nO app verifica e prepara o DSH no Termux a cada abertura e carrega sua interface web autenticada dentro do SIG Harness.\n\n- As opções **Reparar instalação** e **Iniciar DSH ao ligar** ficam no fim da aba **General** das configurações do DSH.\n- O início no boot usa o Termux:Boot e funciona sem abrir o SIG Harness.\n- Com o Tailscale conectado, o DSH fica acessível pela porta fixa **3080**. O acesso segue as regras da tailnet.\n- A instalação da atualização preserva os dados do app.`
+      body: `## SIG Harness ${version}\n\nO app verifica e prepara o DSH no Termux a cada abertura e carrega sua interface dentro do SIG Harness.\n\n- A aba **Local** mantém o DSH do próprio aparelho aberto.\n- Use **+** para salvar outras abas com label e URL, como oneplus15:3080 ou taguai:3080; cada WebView continua viva ao alternar de aba.\n- As opções **Reparar instalação** e **Iniciar DSH ao ligar** ficam no fim da aba **General** das configurações do DSH.\n- Com o Tailscale conectado, o DSH fica acessível pela porta fixa **3080**. O acesso segue as regras da tailnet.\n- A instalação da atualização preserva os dados do app.`
     })
   });
   const assetName = `SIG-Harness-${version}.apk`;

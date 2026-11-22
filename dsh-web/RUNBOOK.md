@@ -126,10 +126,10 @@ por porta; com ~70 cookies o header `Cookie` passava de 16 KB, o Node
 respondia `431 Request Header Fields Too Large`, e o WebView mostrava o erro
 como falha de resposta HTTP.
 
-**Correção:** APK **1.5.2+**. O `WebScreen.load()` chama
-`CookieManager.removeAllCookies()` antes de carregar o URL novo; sobra só o
-cookie da porta atual. Se o app estiver preso na página antiga, force a parada
-e abra de novo:
+**Correção:** o `WebScreen.load()` limpa os cookies do host local antes de
+carregar a URL nova. Desde a versão 1.5.7, expira somente `dsh-auth-*` em
+`127.0.0.1`, preservando as sessões das abas remotas. Se o app estiver preso
+na página antiga, force a parada e abra de novo:
 
 ```bash
 su -c 'am force-stop --user 0 com.sig.harness'

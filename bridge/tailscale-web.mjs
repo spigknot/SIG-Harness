@@ -2,6 +2,10 @@ import http from 'node:http';
 import os from 'node:os';
 
 const PORT = 3080;
+const DEVICE_NAMES = new Map([
+  ['100.108.27.64', 'oneplus15'],
+  ['100.114.88.45', 'oneplus-ace-2-pro'],
+]);
 const HOP = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
   'te', 'trailer', 'transfer-encoding', 'upgrade']);
 
@@ -22,7 +26,8 @@ function tailscaleAddress() {
 }
 
 function hosts(ip) {
-  const names = ip === '100.108.27.64' ? ['oneplus15', 'oneplus15.tail362d30.ts.net', ip] : [ip];
+  const name = DEVICE_NAMES.get(ip);
+  const names = name ? [name, name + '.tail362d30.ts.net', ip] : [ip];
   return names.map(name => name + ':' + PORT);
 }
 
