@@ -89,7 +89,8 @@ public final class TermuxRunner {
         void start(String mode, String token, String cwd, int port) {
             new Thread(() -> {
                 try {
-                    String script = new String(readAsset("bootstrap.sh"), StandardCharsets.UTF_8);
+                    String script = new String(readAsset("bootstrap.sh"), StandardCharsets.UTF_8)
+                            .replace("\r\n", "\n");
                     byte[] payload = readAsset("dsh-web.tgz");
                     String sha = hex(MessageDigest.getInstance("SHA-256").digest(payload));
                     InstallTransfer ready = new InstallTransfer(payload);
@@ -198,7 +199,9 @@ public final class TermuxRunner {
                 if (failed.find() && label(failed.group(1)) != null) lastStep = failed.group(1);
                 String detail = label(lastStep);
                 if (detail == null) {
-                    fail(EXTERNAL_APPS);
+                    fail(result.getString("errmsg", "").contains("allow-external-apps")
+                            ? EXTERNAL_APPS
+                            : "O comando do Termux terminou antes de iniciar a verificação. Confira o diagnóstico no Termux.");
                 } else if ("environment".equals(lastStep)) {
                     fail("Execute pelo Termux no Android ARM64 com a sessão comum do Termux.");
                 } else if ("lock".equals(lastStep)) {

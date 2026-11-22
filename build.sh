@@ -16,6 +16,18 @@ for tool in aapt2 d8 javac java python3; do
 done
 [ -f "$ANDROID_JAR" ] || { echo "android.jar not found: $ANDROID_JAR" >&2; exit 1; }
 
+# Reject Windows line endings before copying scripts into the Android payload.
+python3 - "$ROOT" <<'PY'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+for directory in ("bridge", "dsh-web"):
+    for path in (root / directory).rglob("*"):
+        if path.is_file() and path.suffix in {".sh", ".patch"} and b"\r\n" in path.read_bytes():
+            sys.exit(f"Use LF before packaging: {path.relative_to(root)}")
+PY
+
 # Keep the embedded bridge and ACP patch in sync with the bridge directory.
 cp "$ROOT/bridge/sig-bridge.mjs" "$APP/assets/sig-bridge.mjs"
 cp "$ROOT/bridge/acp.patch.yml" "$APP/assets/acp.patch.yml"
