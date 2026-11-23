@@ -27,10 +27,11 @@ final class RemoteWebPage {
     private final WebFilePicker files;
     private final LinearLayout error;
     private final TextView detail;
+    private final String url;
 
     RemoteWebPage(Context context, URI address, WebFilePicker files, Consumer<String> openBrowser) {
         this.files = files;
-        String url = address.toASCIIString();
+        url = address.toASCIIString();
         root = new FrameLayout(context);
         root.setBackgroundColor(Ui.BG);
         web = new WebView(context);
@@ -110,6 +111,12 @@ final class RemoteWebPage {
     }
 
     View view() { return root; }
+
+    void reload() {
+        error.setVisibility(View.GONE);
+        if (web.getUrl() == null) web.loadUrl(url);
+        else web.reload();
+    }
 
     boolean goBack() {
         if (!web.canGoBack()) return false;

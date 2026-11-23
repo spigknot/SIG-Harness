@@ -37,14 +37,19 @@ final class HarnessTabs {
     private final LinearLayout root;
     private final LinearLayout labels;
     private final FrameLayout pages;
+    private final TextView refresh;
+    private final Runnable refreshLocal;
+    private boolean localPageCanRefresh;
     private final List<Tab> tabs = new ArrayList<>();
     private final Tab local = new Tab("Local", null);
     private Tab selected = local;
 
-    HarnessTabs(Activity activity, View localPage, WebFilePicker files, Consumer<String> openBrowser) {
+    HarnessTabs(Activity activity, View localPage, WebFilePicker files, Consumer<String> openBrowser,
+                Runnable refreshLocal) {
         this.activity = activity;
         this.files = files;
         this.openBrowser = openBrowser;
+        this.refreshLocal = refreshLocal;
         prefs = activity.getSharedPreferences("harness_tabs", Context.MODE_PRIVATE);
         root = Ui.column(activity);
         root.setBackgroundColor(Ui.BG);
@@ -57,6 +62,11 @@ final class HarnessTabs {
         labels.setPadding(dp(8), 0, dp(4), 0);
         scroll.addView(labels);
         bar.addView(scroll, Ui.lpWeight(0, dp(48), 1f));
+        refresh = Ui.iconButton(activity, "↻", 23f, v -> refreshSelected());
+        refresh.setContentDescription("Atualizar página");
+        refresh.setTooltipText("Atualizar página");
+        refresh.setVisibility(View.GONE);
+        bar.addView(refresh);
         TextView add = Ui.iconButton(activity, "+", 25f, v -> edit(null));
         add.setContentDescription("Adicionar aba");
         bar.addView(add);
@@ -75,6 +85,23 @@ final class HarnessTabs {
     }
 
     View view() { return root; }
+
+    void setLocalPageCanRefresh(boolean available) {
+        localPageCanRefresh = available;
+        updateRefresh();
+    }
+
+    private void updateRefresh() {
+        refresh.setVisibility(selected != local || localPageCanRefresh ? View.VISIBLE : View.GONE);
+    }
+
+    private void refreshSelected() {
+        if (selected == local) {
+            if (localPageCanRefresh) refreshLocal.run();
+        } else {
+            selected.remote.reload();
+        }
+    }
 
     boolean handleBack() {
         if (selected == local) return false;
@@ -127,6 +154,7 @@ final class HarnessTabs {
             pages.addView(tab.page, new FrameLayout.LayoutParams(-1, -1));
         }
         selected = tab;
+        updateRefresh();
         tab.page.setVisibility(View.VISIBLE);
         style(previous);
         style(tab);

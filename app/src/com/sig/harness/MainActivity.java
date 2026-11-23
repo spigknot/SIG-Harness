@@ -75,7 +75,6 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
 
     private boolean startFlow;
     private boolean finishing;
-    private boolean resumeAfterSetup;
     private String pendingLaunchMode;
     private TermuxRunner.Installation installation;
     private boolean recoveredThisLaunch;
@@ -93,17 +92,13 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     @Override protected void onResume() {
         super.onResume();
         if (startScreen != null) startScreen.setTermuxInstalled(TermuxRunner.isTermuxInstalled(this));
-        if (resumeAfterSetup && screen == SCREEN_START && TermuxRunner.isTermuxInstalled(this)) {
-            resumeAfterSetup = false;
-            ui.post(() -> launchHarness("check"));
-        } else if (screen == SCREEN_WEB && bridge == null && !startFlow) {
-            ui.post(() -> launchHarness("check"));
+        if (screen == SCREEN_WEB && bridge == null && !startFlow) {
+            showStart();
         }
     }
 
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (Intent.ACTION_MAIN.equals(intent.getAction())) ui.post(() -> launchHarness("check"));
     }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -123,11 +118,12 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         root.addView(connectionBanner, bannerLp);
         overlayHost = new FrameLayout(this);
         root.addView(overlayHost, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
-        tabs = new HarnessTabs(this, root, webFiles, this::openChrome);
+        tabs = new HarnessTabs(this, root, webFiles, this::openChrome, () -> {
+            if (screen == SCREEN_WEB && webScreen != null) webScreen.reload();
+        });
         setContentView(tabs.view());
 
         showStart();
-        ui.post(() -> launchHarness("check"));
     }
 
     private TextView buildBanner() {
@@ -153,6 +149,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
     private void setScreen(View view) {
         contentHost.removeAllViews();
         contentHost.addView(view, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        tabs.setLocalPageCanRefresh(screen == SCREEN_WEB);
         updateBanner();
     }
 
@@ -164,8 +161,7 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         screen = SCREEN_START;
         setScreen(startScreen.view());
         if (!startFlow) {
-            startScreen.setBusy(false);
-            startScreen.setStatus("Harness parado", Ui.TEXT_SOFT);
+            startScreen.showIdle();
         }
     }
 
@@ -232,11 +228,10 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
         @Override public void onStart() { launchHarness("check"); }
         @Override public void onRepair() { launchHarness("repair"); }
         @Override public void onOpenTermux() {
-            resumeAfterSetup = true;
             TermuxRunner.openTermux(MainActivity.this);
         }
-        @Override public void onInstallTermux() { resumeAfterSetup = true; openInstallPage(); }
-        @Override public void onOpenSettings() { resumeAfterSetup = true; openAppSettings(); }
+        @Override public void onInstallTermux() { openInstallPage(); }
+        @Override public void onOpenSettings() { openAppSettings(); }
     };
 
     private void openInstallPage() {
@@ -499,10 +494,9 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
                 if (TermuxRunner.EXTERNAL_APPS.equals(message)) {
                     new AlertDialog.Builder(MainActivity.this)
                             .setTitle("Configurar o Termux")
-                            .setMessage("Para liberar a primeira conexão, copie a configuração e cole no Termux. Depois volte aqui.")
+                            .setMessage("Cole a configuração no Termux. Depois volte e toque em Iniciar Harness.")
                             .setPositiveButton("Copiar e abrir Termux", (d, w) -> {
                                 copyTermuxSetup();
-                                resumeAfterSetup = true;
                                 TermuxRunner.openTermux(MainActivity.this);
                             })
                             .setNegativeButton("Agora não", null)
@@ -1205,7 +1199,6 @@ public final class MainActivity extends Activity implements BridgeClient.Listene
 
     private final WebScreen.Host webHost = new WebScreen.Host() {
         @Override public void onRetry() { doStartWeb(); }
-        @Override public void onRepair() { if (!startFlow) confirmRepair(); }
         @Override public void onOpenChrome(String url) { openChrome(url); }
         @Override public void onOpenSettings() { showVoiceSettings(); }
     };

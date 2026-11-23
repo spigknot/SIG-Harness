@@ -64,7 +64,7 @@ async function publish(tag) {
       tag_name: tag,
       name: `SIG Harness ${version}`,
       target_commitish: 'main',
-      body: `## SIG Harness ${version}\n\nO app verifica e prepara o DSH no Termux a cada abertura e carrega sua interface dentro do SIG Harness.\n\n- A aba **Local** mantém o DSH do próprio aparelho aberto.\n- Use **+** para salvar outras abas com label e URL, como oneplus15:3080 ou taguai:3080; cada WebView continua viva ao alternar de aba.\n- As opções **Reparar instalação** e **Iniciar DSH ao ligar** ficam no fim da aba **General** das configurações do DSH.\n- Com o Tailscale conectado, o DSH fica acessível pela porta fixa **3080**. O acesso segue as regras da tailnet.\n- A instalação da atualização preserva os dados do app.`
+      body: `## SIG Harness ${version}\n\nO Harness local inicia sob demanda. Toque em **Iniciar Harness** para verificar dependências e abrir o DSH.\n\n- **Reparar instalação** fica acessível na tela inicial e nas configurações.\n- O botão **↻** na barra de abas recarrega a página atual.\n- Use **+** para salvar abas remotas com label e URL, como oneplus15:3080 ou taguai:3080. As páginas continuam abertas ao alternar de aba.\n- A aba **Local** abre o DSH deste aparelho. As opções **Iniciar DSH ao ligar** e **Reparar instalação** também ficam no fim da aba **General** das configurações.\n- Com o Tailscale conectado, o DSH fica acessível pela porta fixa **3080**. O acesso segue as regras da tailnet.\n- A instalação da atualização preserva os dados do app.`
     })
   });
   const assetName = `SIG-Harness-${version}.apk`;

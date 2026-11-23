@@ -18,7 +18,7 @@ public final class StartScreen {
         void onOpenSettings();
     }
 
-    private final ScrollView root;
+    private final LinearLayout root;
     private final TextView status;
     private final TextView detail;
     private final TextView primary;
@@ -29,13 +29,27 @@ public final class StartScreen {
     private boolean busy;
 
     public StartScreen(Context c, Host host) {
-        root = new ScrollView(c);
+        root = Ui.column(c);
         root.setBackgroundColor(Ui.BG);
-        root.setFillViewport(true);
+
+        repair = Ui.text(c, "Reparar instalação", 13f, Ui.ACCENT, Ui.MEDIUM);
+        repair.setGravity(Gravity.CENTER);
+        repair.setPadding(Ui.dp(c, 12), 0, Ui.dp(c, 12), 0);
+        repair.setBackground(Ui.ripple(android.graphics.Color.TRANSPARENT, 8f, c));
+        repair.setOnClickListener(v -> host.onRepair());
+        repair.setFocusable(true);
+        LinearLayout.LayoutParams repairLayout = Ui.lp(-2, Ui.dp(c, 48));
+        repairLayout.gravity = Gravity.END;
+        repairLayout.setMarginEnd(Ui.dp(c, 12));
+        root.addView(repair, repairLayout);
+
+        ScrollView scroll = new ScrollView(c);
+        scroll.setFillViewport(true);
+        root.addView(scroll, Ui.lpWeight(-1, 0, 1f));
         LinearLayout body = Ui.column(c);
         body.setGravity(Gravity.CENTER_VERTICAL);
         body.setPadding(Ui.dp(c, 24), Ui.dp(c, 24), Ui.dp(c, 24), Ui.dp(c, 24));
-        root.addView(body);
+        scroll.addView(body);
 
         body.addView(Ui.text(c, "SIG Harness", 26f, Ui.TEXT, Ui.MEDIUM));
         status = Ui.text(c, "", 16f, Ui.TEXT_SOFT, Ui.MEDIUM);
@@ -50,13 +64,10 @@ public final class StartScreen {
         progress.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(Ui.ACCENT));
         add(body, progress, 12);
 
-        primary = Ui.primaryButton(c, "Abrir Harness", v -> {
+        primary = Ui.primaryButton(c, "Iniciar Harness", v -> {
             if (termuxInstalled) host.onStart(); else host.onInstallTermux();
         });
         add(body, primary, 20);
-        repair = Ui.ghostButton(c, "Reparar instalação", v -> host.onRepair());
-        add(body, repair, 8);
-
         setup = Ui.column(c);
         add(setup, Ui.ghostButton(c, "Abrir Termux", v -> host.onOpenTermux()), 8);
         add(setup, Ui.ghostButton(c, "Permissões do SIG Harness", v -> host.onOpenSettings()), 4);
@@ -84,7 +95,7 @@ public final class StartScreen {
     }
 
     private void updateActions() {
-        primary.setText(termuxInstalled ? "Abrir Harness" : "Instalar Termux");
+        primary.setText(termuxInstalled ? "Iniciar Harness" : "Instalar Termux");
         primary.setVisibility(busy ? View.GONE : View.VISIBLE);
         repair.setVisibility(!busy && termuxInstalled ? View.VISIBLE : View.GONE);
         setup.setVisibility(!busy && termuxInstalled ? View.VISIBLE : View.GONE);
@@ -101,5 +112,11 @@ public final class StartScreen {
         setStatus(title, Ui.RED);
         detail.setText(message);
         detail.setVisibility(View.VISIBLE);
+    }
+
+    public void showIdle() {
+        setBusy(false);
+        setStatus("Pronto para iniciar", Ui.TEXT_SOFT);
+        detail.setVisibility(View.GONE);
     }
 }

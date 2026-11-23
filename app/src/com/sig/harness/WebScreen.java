@@ -2,7 +2,6 @@ package com.sig.harness;
 
 import android.app.Activity;
 import android.content.Context;
-import android.graphics.Color;
 import android.net.Uri;
 import android.view.Gravity;
 import android.view.View;
@@ -30,7 +29,6 @@ import java.util.ArrayList;
 public final class WebScreen {
     public interface Host {
         void onRetry();
-        void onRepair();
         void onOpenChrome(String url);
         void onOpenSettings();
     }
@@ -38,8 +36,6 @@ public final class WebScreen {
     private final Context c;
     private final Host host;
     private final LinearLayout root;
-    private final LinearLayout header;
-    private int pageGeneration;
     private final WebView web;
     private final ProgressBar progress;
     private final FrameLayout frame;
@@ -53,7 +49,6 @@ public final class WebScreen {
     private final WebFilePicker files;
     private String downloadHook;
     private String voiceHook;
-    private String shellHook;
     private final VoiceBridge voice;
     /** Reloads automáticos quando o host troca de porta/token logo após o primeiro load. */
     private int autoRetries;
@@ -89,19 +84,6 @@ public final class WebScreen {
                 : null);
         root = Ui.column(c);
         root.setBackgroundColor(Ui.BG);
-
-        header = Ui.row(c);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(Ui.dp(c, 12), 0, Ui.dp(c, 8), 0);
-        header.addView(Ui.text(c, "SIG Harness", 13f, Ui.TEXT_SOFT, Ui.MEDIUM),
-                Ui.lpWeight(0, -2, 1f));
-        TextView repair = Ui.text(c, "Reparar instalação", 13f, Ui.ACCENT, Ui.MEDIUM);
-        repair.setGravity(Gravity.CENTER);
-        repair.setPadding(Ui.dp(c, 10), 0, Ui.dp(c, 10), 0);
-        repair.setBackground(Ui.ripple(Color.TRANSPARENT, 8f, c));
-        repair.setOnClickListener(v -> host.onRepair());
-        header.addView(repair, new LinearLayout.LayoutParams(-2, Ui.dp(c, 48)));
-        root.addView(header);
 
         progress = new ProgressBar(c, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
@@ -146,7 +128,6 @@ public final class WebScreen {
                 return true;
             }
             @Override public void onPageStarted(WebView view, String pageUrl, android.graphics.Bitmap favicon) {
-                pageGeneration++;
                 showWaiting(false);
                 hideError();
                 progress.setVisibility(View.VISIBLE);
@@ -155,12 +136,9 @@ public final class WebScreen {
                 progress.setVisibility(View.GONE);
                 installDownloadHook();
                 installVoiceHook();
-                installShellHook();
-                checkChatReady(pageGeneration, 60);
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request != null && request.isForMainFrame()) {
-                    pageGeneration++;
                     progress.setVisibility(View.GONE);
                     if (autoRetries++ < 2) { host.onRetry(); return; }
                     showError("Não foi possível carregar a interface web. " + (error == null ? "" : error.getDescription()));
@@ -168,7 +146,6 @@ public final class WebScreen {
             }
             @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
                 if (request != null && request.isForMainFrame()) {
-                    pageGeneration++;
                     progress.setVisibility(View.GONE);
                     if (autoRetries++ < 2) { host.onRetry(); return; }
                     int status = errorResponse == null ? 0 : errorResponse.getStatusCode();
@@ -227,21 +204,11 @@ public final class WebScreen {
 
     public View view() { return root; }
 
-    private void checkChatReady(int generation, int attempts) {
-        if (destroyed || generation != pageGeneration || errorCard.getVisibility() == View.VISIBLE
-                || waiting.getVisibility() == View.VISIBLE || header.getVisibility() == View.GONE) return;
-        web.evaluateJavascript("!!document.querySelector('[data-composer-input]')", ready -> {
-            if (destroyed || generation != pageGeneration) return;
-            if ("true".equals(ready)) {
-                header.setVisibility(View.GONE);
-            } else if (attempts > 1) {
-                web.postDelayed(() -> checkChatReady(generation, attempts - 1), 500L);
-            }
-        });
+    void reload() {
+        if (waiting.getVisibility() != View.VISIBLE && web.getUrl() != null) web.reload();
     }
 
     public void load(final String value) {
-        pageGeneration++;
         final int generation = ++loadGeneration;
         this.url = value;
         hideError();
@@ -275,15 +242,11 @@ public final class WebScreen {
         waitingText.setText(text == null ? "Iniciando a interface web…" : text);
         showWaiting(visible);
         if (visible) {
-            pageGeneration++;
-            header.setVisibility(View.VISIBLE);
             errorCard.setVisibility(View.GONE);
         }
     }
 
     public void showError(String message) {
-        pageGeneration++;
-        header.setVisibility(View.VISIBLE);
         errorText.setText(message == null ? "Erro desconhecido." : message);
         errorCard.setVisibility(View.VISIBLE);
         waiting.setVisibility(View.GONE);
@@ -343,24 +306,6 @@ public final class WebScreen {
 
     private void evaluate(String code) {
         try { web.evaluateJavascript(code, null); } catch (Throwable ignored) { }
-    }
-
-    /** Install the in-page reload control next to the agent-preset label. */
-    private void installShellHook() {
-        try {
-            if (shellHook == null) {
-                InputStream in = c.getAssets().open("reload-button.js");
-                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-                byte[] chunk = new byte[8192];
-                int read;
-                while ((read = in.read(chunk)) != -1) buffer.write(chunk, 0, read);
-                in.close();
-                shellHook = buffer.toString("UTF-8");
-            }
-            web.evaluateJavascript(shellHook, null);
-        } catch (Throwable ignored) {
-            // The page remains usable without the reload shortcut.
-        }
     }
 
     /** Install the dictation button on top of the composer's send button. */
